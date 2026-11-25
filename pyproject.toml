@@ -1,0 +1,26 @@
+[project]
+name = "knowledge-agent"
+version = "0.1.0"
+description = "An A2A knowledge-search agent backed by LCORE"
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.2",
+    "pytest-asyncio>=1.0.0",
+    "ruff>=0.11.13",
+    "pyright>=1.1.401",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
