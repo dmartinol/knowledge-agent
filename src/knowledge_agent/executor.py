@@ -16,7 +16,7 @@ SCAFFOLD_MESSAGE = (
 
 
 class KnowledgeSearchExecutor(AgentExecutor):
-    """Placeholder executor replaced by the bounded workflow (APPENG-7056)."""
+    """Placeholder executor replaced by the bounded workflow."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings

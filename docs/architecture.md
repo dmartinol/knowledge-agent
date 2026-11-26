@@ -42,6 +42,14 @@ The service uses the LCORE Agent Card and A2A JSON-RPC endpoint for upstream que
 
 The agent's A2A response can use task states for progress and clarification, and artifacts for the final answer and evidence. The exact artifact shape depends on what the deployed LCORE A2A interface returns and what the calling agents need.
 
+### LCORE client
+
+- Discover `LCORE_AGENT_CARD_URL` once, cache the validated card, and require protocol `0.3.x` with JSON-RPC.
+- Use non-streaming `message/send` with a text part, blocking completion, one attempt, and the configured per-call timeout.
+- Send no message metadata. The client API exposes no model, provider, vector-store, or source-selection input.
+- Normalize completed text, task and context IDs, structured evidence, and stable error categories.
+- Treat evidence as unavailable unless LCORE supplies `referenced_documents` or `rag_chunks` in artifact metadata or data parts. Do not infer citations from prose.
+
 ## Controlled workflow
 
 1. Validate the caller's request and check whether ambiguity would change the search target.
@@ -55,8 +63,8 @@ The workflow may store a short structured plan and evidence assessment. It does 
 ## Known constraints
 
 - The current LCORE A2A handler is a general query path, not a dedicated raw-retrieval API.
-- The current LCORE A2A response is text-oriented. Evidence identifiers, source excerpts, and citation guarantees need validation.
+- The current LCORE A2A response is text-oriented. The client reports evidence as unavailable; structured evidence handling is forward-compatible but unverified upstream.
 - LCORE's current A2A path does not use standard LCORE quota accounting. Local limits are required until the upstream policy is clarified.
-- LCORE currently accepts vector-store IDs in request metadata. This service must not set that field, and server-side configuration must remain authoritative.
+- LCORE currently accepts vector-store IDs in request metadata. The client sends no metadata, and server-side configuration remains authoritative.
 
 See [open questions](open-questions.md) for the validation checklist.

@@ -4,31 +4,31 @@ Resolve these against the LCORE version used by the POC before depending on them
 
 ## 1. Evidence returned over A2A
 
-- Does the LCORE Agent Card describe the query skill and its supported inputs?
-- Does an A2A task artifact include source names, document IDs, URLs, excerpts, or scores?
-- Are those references stable and sufficient for the Knowledge Search service to cite?
-- If LCORE returns only generated text, what supported interface can provide evidence without bypassing the service boundary?
+- Verified: the LCORE Agent Card describes a generic text query skill and no retrieval metadata.
+- Verified: A2A artifacts currently contain only answer text and `conversation_id`; REST exposes `rag_chunks` and `referenced_documents`.
+- Open: the upstream contract for returning structured evidence over A2A, including stable document IDs, URLs, excerpts, and scores.
+- Current behavior: the agent treats prose and inline documentation markers as unverified text, not citations.
 
 ## 2. Source selection
 
-- Confirm the deployed LCORE configuration selects the intended OKP and BYOK sources.
-- Confirm how the current vector_store_ids metadata is ignored or rejected for this service.
-- Keep the agent's upstream calls independent of source IDs.
+- Verified locally: retrieval uses the sources configured in LCORE deployment configuration.
+- Enforced client-side: `LcoreClient` sends no message metadata, so callers cannot supply `model`, `provider`, or `vector_store_ids`.
+- Open: confirm how LCORE handles metadata if another client sends it, and keep server-side configuration authoritative.
 
 ## 3. Authentication and caller context
 
-- Determine how the agent authenticates to LCORE A2A.
-- Determine whether caller identity must be delegated to LCORE or whether the service uses a service identity.
-- Forward only documented headers and credentials.
+- Verified locally: LCORE A2A requires no credentials with `auth_enabled: false` and the `noop` authentication module.
+- Open: the production service identity and whether caller identity must be delegated.
+- Rule: forward only documented headers and credentials.
 
 ## 4. Quota and operational limits
 
-- LCORE's current A2A path does not apply standard quota accounting.
-- Decide which service-level limits are required for calls, retries, concurrency, time, and model usage.
-- Establish how limits and usage will be reported to operators.
+- Verified: the A2A path reports no token usage, quota, or cost data.
+- Configured: a per-call timeout is enforced by the LCORE client; workflow round, concurrency, and task-deadline limits will be enforced by the bounded workflow.
+- Open: operator reporting for usage and limit exhaustion.
 
 ## 5. Clarification and task continuity
 
-- Confirm how the calling A2A client resumes a task after an input-required status.
-- Decide how context IDs map to the agent's search state and upstream LCORE context.
-- Define cleanup and expiry behavior for persisted contexts.
+- Verified: LCORE never returns `input-required`; clarification is entirely agent-owned.
+- Verified: reusing `contextId` continues an LCORE conversation.
+- Open: mapping caller context to persisted agent state, plus cleanup and expiry behavior.

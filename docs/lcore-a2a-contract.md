@@ -1,6 +1,6 @@
 # LCORE local A2A contract — verification report
 
-Verification for APPENG-7053 (parent: APPENG-7052). Everything below was captured
+Verification for the evidence-aware knowledge-search design. Everything below was captured
 against a running LCORE instance on `http://localhost:8080`, configured by
 `lightspeed-stack.yaml` from the `lightspeed-stack` checkout; the exact file and a
 redacted `.env` are kept in `docs/lcore-a2a-contract/`. Raw payload excerpts are
@@ -181,7 +181,7 @@ Failures inside execution terminate the task instead:
 
 ## 6. Evidence contract — absent over A2A, present over REST
 
-This is the finding that matters most for APPENG-7052. With
+This is the finding that matters most for the agent design. With
 `rag.retrieval.tool.sources: [okp]` configured, the same query was sent to both
 interfaces.
 
@@ -334,8 +334,6 @@ Client-side rules derived from the captures:
 
 ## 14. Upstream follow-ups
 
-- LCORE evidence contract: tracked as
-  [LCORE-5847](https://redhat.atlassian.net/browse/LCORE-5847) (related to
-  APPENG-7052).
+- LCORE evidence contract: still an open upstream gap.
 - OKP MCP missing evidence: not tracked yet; tracker and owner still to be
   identified.
