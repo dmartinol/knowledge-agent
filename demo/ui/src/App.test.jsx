@@ -55,6 +55,31 @@ function fakeClient(overrides = {}) {
 }
 
 describe('App', () => {
+  it('lets a new run start while an older one awaits clarification', async () => {
+    const user = userEvent.setup()
+    const client = fakeClient({
+      waitForTask: vi
+        .fn()
+        .mockResolvedValueOnce(pendingClarification)
+        .mockResolvedValueOnce(completedTask),
+    })
+    render(<App client={client} />)
+
+    await user.type(screen.getByLabelText('Ask the knowledge agent'), 'Tell me about it.{Enter}')
+    expect(await screen.findByText('Which product do you mean?')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Start new run' }))
+
+    const composer = screen.getByLabelText('Ask the knowledge agent')
+    expect(composer).toBeEnabled()
+    await user.type(composer, 'What is a Route?{Enter}')
+
+    expect(
+      await screen.findByText('Routes expose a Service on a generated hostname.'),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Ask the knowledge agent')).toBeEnabled()
+  })
+
   it('runs a clarification and resumes the same task', async () => {
     const user = userEvent.setup()
     const client = fakeClient({

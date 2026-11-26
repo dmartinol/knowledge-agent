@@ -83,6 +83,35 @@ export async function fetchCard({ signal } = {}) {
 
 export const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+function timeoutError() {
+  const error = new Error('The agent did not finish in time.')
+  error.code = 'ui_timeout'
+  return error
+}
+
+// Bounds one poll: aborts the request and rejects when the slice runs out.
+function pollDeadline(signal, ms) {
+  const controller = new AbortController()
+  const forward = () => controller.abort()
+  if (signal?.aborted) controller.abort()
+  else signal?.addEventListener('abort', forward, { once: true })
+  let handle
+  const promise = new Promise((resolve, reject) => {
+    handle = setTimeout(() => {
+      controller.abort()
+      reject(timeoutError())
+    }, ms)
+  })
+  return {
+    signal: controller.signal,
+    promise,
+    cancel() {
+      clearTimeout(handle)
+      signal?.removeEventListener('abort', forward)
+    },
+  }
+}
+
 export async function waitForTask(taskId, options = {}) {
   const {
     getTaskFn = getTask,
@@ -98,17 +127,22 @@ export async function waitForTask(taskId, options = {}) {
   } = options
   const startedAt = now()
   for (;;) {
-    const task = await getTaskFn(taskId, { signal, onRaw })
+    const elapsed = now() - startedAt
+    if (elapsed >= deadlineMs) throw timeoutError()
+    const deadline = pollDeadline(signal, deadlineMs - elapsed)
+    let task
+    try {
+      const request = Promise.resolve(getTaskFn(taskId, { signal: deadline.signal, onRaw }))
+      // A poll that loses the race must not surface as an unhandled rejection.
+      request.catch(() => {})
+      task = await Promise.race([request, deadline.promise])
+    } finally {
+      deadline.cancel()
+    }
     const state = task?.status?.state
     if (onPoll) onPoll(task, now() - startedAt)
     if (TERMINAL_STATES.has(state) || FAILURE_STATES.has(state)) return task
-    const elapsed = now() - startedAt
-    if (elapsed >= deadlineMs) {
-      const error = new Error('The agent did not finish in time.')
-      error.code = 'ui_timeout'
-      throw error
-    }
-    await sleep(elapsed >= slowAfterMs ? slowIntervalMs : intervalMs)
+    await sleep(now() - startedAt >= slowAfterMs ? slowIntervalMs : intervalMs)
   }
 }
 

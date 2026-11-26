@@ -109,6 +109,22 @@ describe('task view model', () => {
     expect(failureOf(completedTask())).toBeNull()
   })
 
+  it.each([
+    ['canceled', 'canceled'],
+    ['auth-required', 'auth_required'],
+    ['auth_required', 'auth_required'],
+  ])('maps the terminal state %s to the %s failure', (state, code) => {
+    const task = {
+      status: { state, message: { parts: [{ kind: 'text', text: 'Stopped.' }] } },
+    }
+
+    expect(failureOf(task)).toEqual({
+      code,
+      message: 'Stopped.',
+      limitsHit: [],
+    })
+  })
+
   it('maps a rejected task without workflow metadata', () => {
     const task = { status: { state: 'rejected', message: { parts: [{ kind: 'text', text: 'Busy.' }] } } }
 

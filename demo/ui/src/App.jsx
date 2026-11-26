@@ -105,7 +105,7 @@ export default function App({ client = DEFAULT_CLIENT }) {
   const pinnedRef = useRef(true)
 
   const active = useMemo(
-    () => runs.find((run) => run.id === activeId) ?? runs[0] ?? null,
+    () => runs.find((run) => run.id === activeId) ?? null,
     [runs, activeId],
   )
 
@@ -360,6 +360,8 @@ export default function App({ client = DEFAULT_CLIENT }) {
   }, [])
 
   const startNewRun = useCallback(() => {
+    // Keep the selection empty: falling back to the newest run would resurrect
+    // a clarification and disable the composer again.
     setActiveId(null)
     setInput('')
     setAnnouncement('Ready for a new question.')

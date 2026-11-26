@@ -43,12 +43,12 @@ spec:
               value: /tmp
             - name: OTEL_SDK_DISABLED
               value: "true"
-            - name: OPENAI_API_KEY
+            - name: {{ .Values.lcore.inference.apiKeyEnv }}
               valueFrom:
                 secretKeyRef:
                   name: {{ include "knowledge-agent.secretName" . }}
                   key: {{ .Values.secrets.keys.lcoreApiKey }}
-            - name: OPENAI_BASE_URL
+            - name: {{ .Values.lcore.inference.baseUrlEnv }}
               valueFrom:
                 secretKeyRef:
                   name: {{ include "knowledge-agent.secretName" . }}

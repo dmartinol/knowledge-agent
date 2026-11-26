@@ -39,12 +39,20 @@ export function clarificationOf(task) {
   return textOf(task.status.message?.parts) || 'The agent needs more information.'
 }
 
+const FAILURE_STATE_CODES = {
+  failed: 'unknown',
+  rejected: 'rejected',
+  canceled: 'canceled',
+  'auth-required': 'auth_required',
+  auth_required: 'auth_required',
+}
+
 export function failureOf(task) {
   const state = task?.status?.state
-  if (state !== 'failed' && state !== 'rejected') return null
+  if (!(state in FAILURE_STATE_CODES)) return null
   const workflow = workflowOf(task)
   return {
-    code: workflow?.error ?? (state === 'rejected' ? 'rejected' : 'unknown'),
+    code: workflow?.error ?? FAILURE_STATE_CODES[state],
     message: textOf(task.status?.message?.parts),
     limitsHit: Array.isArray(workflow?.limits_hit) ? workflow.limits_hit : [],
   }

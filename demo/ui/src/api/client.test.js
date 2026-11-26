@@ -197,6 +197,14 @@ describe('waitForTask', () => {
     expect(now()).toBeGreaterThanOrEqual(200000)
   })
 
+  it('gives up when a poll request never settles', async () => {
+    const getTaskFn = vi.fn(() => new Promise(() => {}))
+
+    await expect(
+      waitForTask('task-1', { getTaskFn, deadlineMs: 25 }),
+    ).rejects.toMatchObject({ code: 'ui_timeout' })
+  })
+
   it('honours an injected deadline', async () => {
     const { sleep, now } = clockedSleep()
     const getTaskFn = vi.fn(async () => ({ id: 'task-1', status: { state: 'working' } }))

@@ -57,6 +57,14 @@ const ERROR_COPY = {
     title: 'The agent skills could not be loaded',
     detail: 'The skills tree or one of its packages was unusable.',
   },
+  canceled: {
+    title: 'The agent canceled the run',
+    detail: 'The task ended in the canceled state before an answer was ready.',
+  },
+  auth_required: {
+    title: 'The agent needs credentials',
+    detail: 'The task ended in the auth-required state; provide credentials and retry.',
+  },
   rejected: {
     title: 'The agent is at capacity',
     detail: 'Every concurrent task slot was busy, so this request was rejected.',
