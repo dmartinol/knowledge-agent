@@ -48,8 +48,12 @@ before depending on them. Status words are `Verified`, `Decided`, and `Open`.
 ## 4. Agent skills and prompt assets
 
 - Decided: instructions live in the agent's `skills/` tree and are loaded with
-  `pydantic-ai-skills` `SkillsCapability`. LCORE skills are out of scope.
-- Open: pin a compatible pydantic-ai and `pydantic-ai-skills` version pair and
+  the `Skills` capability of `pydantic-ai-harness[skills]`. LCORE skills are out
+  of scope.
+- Decided: skills activation is deferred. The current runtime carries the same
+  guidance in a code-owned system prompt, and artifact metadata reports an empty
+  skill list until the capability is wired in.
+- Open: pin a compatible pydantic-ai and `pydantic-ai-harness` version pair and
   verify progressive disclosure behavior in the service.
 - Open: skill ownership, review, and versioning. Artifact metadata should record
   the skill names and versions used for a run.

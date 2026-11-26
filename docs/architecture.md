@@ -2,10 +2,11 @@
 
 ## Implementation status
 
-This document describes the target foundation. The current runtime still
-implements the earlier deterministic decide-search-observe loop and asks LCORE
-to consolidate multiple answers. Those behaviors remain the baseline until the
-agent-owned reasoning implementation lands; they are not the target design.
+The runtime implements the control-plane design below: a pydantic-ai typed tool
+loop with an agent-owned model provider, a retrieval-only LCORE client, and
+code-owned rendering of Sources, Gaps, and limitations. Still pending: the
+`skills/` tree is authored but not yet loaded, and verified citations wait on the
+upstream structured evidence envelope.
 
 ## Selected deployment shape
 
@@ -116,11 +117,14 @@ tool loop:
   across searches, renders Gaps from the structured field, and adds limit
   limitations.
 
-Agent instructions live in the `skills/` tree and are loaded with
-`pydantic-ai-skills` `SkillsCapability`: `knowledge-search` covers clarification
-and search strategy; `answer-synthesis` covers evidence use, answer shape, and
-gap reporting. Skills own instructions; code owns bounds, validation, and
-evidence rendering.
+Agent instructions currently live in the runtime system prompt. The `skills/`
+tree holds the same guidance as `knowledge-search` (clarification and search
+strategy) and `answer-synthesis` (evidence use, answer shape, gap reporting). The
+intended loader is the `Skills` capability of `pydantic-ai-harness[skills]`,
+which reads `SKILL.md` packages and exposes each skill as a deferred capability;
+`pydantic-ai-skills` is only needed if skills also ship scripts or reference
+files. Skills own instructions; code owns bounds, validation, and evidence
+rendering.
 
 ## Evidence and output contract
 
@@ -150,7 +154,7 @@ Artifact metadata under `knowledge_agent` records the observable workflow state:
 | `loop` | `typed_tool` |
 | `decision_source` | `llm` |
 | `searches` / `search_limit` | LCORE searches performed and the hard cap |
-| `evidence_status` | `available`, `none`, or `unavailable` |
+| `evidence_status` | `available`, `none`, `unavailable`, or `not_configured` |
 | `evidence` | Structured references with their search index |
 | `llm_requests` / `llm_tokens` | Agent model usage, when reported by the provider |
 | `clarification_used` | Whether the task consumed its one clarification |
@@ -170,6 +174,7 @@ chain-of-thought.
 | Agent tokens | 60,000 | pydantic-ai `UsageLimits` |
 | Agent model call | 60 s | Model-provider timeout |
 | LCORE call | 90 s | LCORE client |
+| LCORE material per search | 12,000 chars | `WORKFLOW_MAX_MATERIAL_CHARS` |
 | Whole task | 180 s | `asyncio.timeout` |
 | Concurrent tasks | 4 | Semaphore |
 | Clarifications | 1 | Executor and task metadata |
@@ -191,9 +196,12 @@ The agent model is configured through `AGENT_LLM_BASE_URL`,
 `AGENT_LLM_MODEL`, `AGENT_LLM_API_KEY`, `AGENT_LLM_TIMEOUT_SECONDS`,
 `AGENT_LLM_REQUEST_LIMIT`, and `AGENT_LLM_TOTAL_TOKENS_LIMIT`. Local runs may
 fall back to `OPENAI_BASE_URL`, `E2E_OPENAI_MODEL`, and
-`ENMAAS_KEY`/`OPENAI_API_KEY`. The LCORE URL and workflow limits keep their
-existing configuration names. `WORKFLOW_FOLLOW_UP_POLICY` is retired because
-the model, not a rules policy, decides follow-ups.
+`ENMAAS_KEY`/`OPENAI_API_KEY`. All three model values must resolve together;
+the service exits at startup when they do not. The LCORE URL and workflow limits
+keep their existing configuration names, and
+`WORKFLOW_MAX_MATERIAL_CHARS` bounds the material handed to the model.
+`WORKFLOW_FOLLOW_UP_POLICY` is retired because the model, not a rules policy,
+decides follow-ups.
 
 ## Known constraints
 

@@ -2,9 +2,10 @@
 
 ## Status
 
-This document specifies the target agent-owned reasoning loop. The current
-runtime still uses the deterministic baseline; the implementation work replaces
-it with the contract below.
+This document specifies the agent-owned reasoning loop, and the runtime
+implements it. Two parts remain open: the skills below are authored but still
+delivered through the runtime system prompt, and verified citations depend on
+the upstream structured evidence envelope.
 
 ## Principles
 
@@ -27,13 +28,15 @@ it with the contract below.
 | A2A executor | Validates the caller message, manages task state, enforces the task deadline and concurrency slot, and maps results to A2A states |
 | pydantic-ai agent | Runs the typed tool loop with the agent-owned model provider |
 | `search_knowledge` tool | Performs one fresh LCORE A2A search and returns a bounded observation |
-| `skills/` tree | Holds the agent instructions for search strategy and answer synthesis, loaded with `pydantic-ai-skills` `SkillsCapability` |
+| `skills/` tree | Holds the agent instructions for search strategy and answer synthesis; the target loader is `pydantic-ai-harness[skills]` `Skills` |
 | Result renderer | Appends code-owned Sources, Gaps, and limitations and emits artifact metadata |
 
 ## Request lifecycle
 
 1. The executor validates the caller's text and reads any pending clarification
    state from task metadata.
+   An empty message without a pending clarification completes with a short
+   request for a concrete question, without a model or LCORE call.
 2. If a clarification is pending, the executor composes the original question
    with the caller's reply, marks the clarification as used, and runs the agent
    with an answer-only output contract.
@@ -146,8 +149,9 @@ Only structured references become Sources. The renderer:
    no structured references exist.
 4. Renders `Gaps:` from the structured gaps field and adds a search-limit gap
    when the cap was reached.
-5. Removes leading process narration from the model answer as a defensive
-   filter. The filter never decides whether to search.
+5. Strips inline `<|...|>` markers and a leading `Answer:` label from the model
+   answer. There is no narration heuristic: the system prompt and the output
+   validator own the answer shape.
 
 Inline `<|/documentation/...|>` markers are never rendered as citations. If they
 appear in the model answer, the renderer strips them before display.
@@ -161,6 +165,7 @@ appear in the model answer, the renderer strips them before display.
 | Model tokens | `AGENT_LLM_TOTAL_TOKENS_LIMIT` (default 60,000) | pydantic-ai `UsageLimits` |
 | Model call | `AGENT_LLM_TIMEOUT_SECONDS` (default 60) | Provider client timeout |
 | LCORE call | `WORKFLOW_UPSTREAM_TIMEOUT_SECONDS` (default 90) | LCORE client |
+| LCORE material | `WORKFLOW_MAX_MATERIAL_CHARS` (default 12,000) | LCORE client |
 | Whole task | `WORKFLOW_TASK_DEADLINE_SECONDS` (default 180) | `asyncio.timeout` |
 | Concurrent tasks | `WORKFLOW_MAX_CONCURRENT_TASKS` (default 4) | Semaphore |
 | Clarifications | 1 | Executor and task metadata |
@@ -200,7 +205,7 @@ The successful artifact metadata under `knowledge_agent` is:
   "llm_requests": 4,
   "llm_tokens": 12345,
   "clarification_used": false,
-  "skills": ["knowledge-search", "answer-synthesis"],
+  "skills": [],
   "limits_hit": []
 }
 ```
@@ -208,7 +213,11 @@ The successful artifact metadata under `knowledge_agent` is:
 `evidence[]` entries carry the same stable reference identity used for
 deduplication plus their 1-based `search` index. `limits_hit` can contain
 `search`, `model_requests`, `tokens`, or `deadline`. Failed tasks replace the
-success fields with `{"error": "<stable_category>"}`.
+success fields with `{"error": "<stable_category>", "limits_hit": [...]}`.
+Failure categories are `model_config_error`, `model_unavailable`,
+`model_timeout`, `model_limit`, `model_output_invalid`, `deadline`, and the
+existing LCORE categories. `skills` stays empty until the `Skills` capability is
+wired in.
 
 ## Logging and privacy
 

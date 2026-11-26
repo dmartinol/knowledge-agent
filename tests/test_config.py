@@ -1,6 +1,6 @@
 import pytest
 
-from knowledge_agent.config import ConfigError, FollowUpPolicy, Settings
+from knowledge_agent.config import ConfigError, Settings
 
 
 def test_defaults() -> None:
@@ -16,10 +16,14 @@ def test_defaults() -> None:
     )
     limits = settings.workflow
     assert limits.max_rounds == 2
+    assert limits.max_material_chars == 12_000
     assert limits.upstream_timeout_seconds == 90
     assert limits.task_deadline_seconds == 180
     assert limits.max_concurrent_tasks == 4
-    assert limits.follow_up_policy is FollowUpPolicy.AUTO
+    assert settings.llm.configured is False
+    assert settings.llm.request_limit == 6
+    assert settings.llm.total_tokens_limit == 60_000
+    assert settings.llm.timeout_seconds == 60
 
 
 def test_environment_overrides() -> None:
@@ -29,20 +33,69 @@ def test_environment_overrides() -> None:
             "PORT": "9000",
             "LCORE_AGENT_CARD_URL": "http://lcore.internal:8080/.well-known/agent-card.json",
             "WORKFLOW_MAX_ROUNDS": "1",
+            "WORKFLOW_MAX_MATERIAL_CHARS": "4000",
             "WORKFLOW_UPSTREAM_TIMEOUT_SECONDS": "45",
             "WORKFLOW_TASK_DEADLINE_SECONDS": "60",
             "WORKFLOW_MAX_CONCURRENT_TASKS": "8",
-            "WORKFLOW_FOLLOW_UP_POLICY": "heuristic",
+            "AGENT_LLM_BASE_URL": "https://model.example.com/v1",
+            "AGENT_LLM_MODEL": "vendor/model",
+            "AGENT_LLM_API_KEY": "secret",
+            "AGENT_LLM_TIMEOUT_SECONDS": "30",
+            "AGENT_LLM_REQUEST_LIMIT": "4",
+            "AGENT_LLM_TOTAL_TOKENS_LIMIT": "9000",
         }
     )
 
     assert settings.public_url == "http://0.0.0.0:9000"
     assert settings.lcore_agent_card_url.startswith("http://lcore.internal")
     assert settings.workflow.max_rounds == 1
+    assert settings.workflow.max_material_chars == 4000
     assert settings.workflow.upstream_timeout_seconds == 45
     assert settings.workflow.task_deadline_seconds == 60
     assert settings.workflow.max_concurrent_tasks == 8
-    assert settings.workflow.follow_up_policy is FollowUpPolicy.HEURISTIC
+    assert settings.llm.configured is True
+    assert settings.llm.base_url == "https://model.example.com/v1"
+    assert settings.llm.model == "vendor/model"
+    assert settings.llm.request_limit == 4
+    assert settings.llm.total_tokens_limit == 9000
+    assert settings.llm.timeout_seconds == 30
+
+
+def test_model_configuration_falls_back_to_existing_variables() -> None:
+    settings = Settings.from_env(
+        {
+            "OPENAI_BASE_URL": "https://fallback.example.com/v1",
+            "E2E_OPENAI_MODEL": "fallback-model",
+            "ENMAAS_KEY": "fallback-key",
+        }
+    )
+
+    assert settings.llm.configured is True
+    assert settings.llm.base_url == "https://fallback.example.com/v1"
+    assert settings.llm.model == "fallback-model"
+    assert settings.llm.api_key.get_secret_value() == "fallback-key"
+
+
+def test_partial_model_configuration_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="AGENT_LLM_MODEL"):
+        Settings.from_env({"AGENT_LLM_BASE_URL": "https://model.example.com/v1"})
+
+
+def test_ambient_api_key_alone_does_not_break_configuration() -> None:
+    settings = Settings.from_env({"OPENAI_API_KEY": "ambient-key"})
+
+    assert settings.llm.configured is False
+
+
+def test_invalid_model_base_url_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="AGENT_LLM_BASE_URL"):
+        Settings.from_env(
+            {
+                "AGENT_LLM_BASE_URL": "model.example.com",
+                "AGENT_LLM_MODEL": "vendor/model",
+                "AGENT_LLM_API_KEY": "secret",
+            }
+        )
 
 
 def test_public_url_override_wins_and_is_normalized() -> None:
@@ -77,9 +130,9 @@ def test_more_than_one_follow_up_is_rejected() -> None:
         Settings.from_env({"WORKFLOW_MAX_ROUNDS": "3"})
 
 
-def test_unknown_follow_up_policy_is_rejected() -> None:
-    with pytest.raises(ConfigError, match="WORKFLOW_FOLLOW_UP_POLICY"):
-        Settings.from_env({"WORKFLOW_FOLLOW_UP_POLICY": "always"})
+def test_zero_material_limit_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="max_material_chars"):
+        Settings.from_env({"WORKFLOW_MAX_MATERIAL_CHARS": "0"})
 
 
 def test_upstream_timeout_above_deadline_is_rejected() -> None:

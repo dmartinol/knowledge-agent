@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -43,16 +43,25 @@ from knowledge_agent.config import Settings
 logger = logging.getLogger(__name__)
 
 SUPPORTED_PROTOCOL_PREFIX = "0.3."
+EVIDENCE_ENVELOPE_KEY = "evidence"
 EVIDENCE_DOCUMENT_KEYS = ("referenced_documents",)
 EVIDENCE_CHUNK_KEYS = ("rag_chunks",)
 
 EvidenceKind = Literal["document", "chunk"]
-EvidenceStatus = Literal["unavailable", "none", "available"]
+SupportKind = Literal["retrieved", "cited"]
+EvidenceStatus = Literal["unavailable", "none", "available", "not_configured"]
 EvidenceKey = tuple[str, str | None, str | None, str | None, str | None]
+ENVELOPE_STATUSES: frozenset[str] = frozenset(
+    {"available", "none", "unavailable", "not_configured"}
+)
 
 
 def evidence_key(evidence: LcoreEvidence) -> EvidenceKey:
     """Identity used to deduplicate one evidence item across normalizations."""
+    if evidence.kind == "document":
+        if evidence.source or evidence.document_id:
+            return ("document", evidence.source, evidence.document_id, None, None)
+        return ("document", None, None, evidence.url, evidence.title)
     return (
         evidence.kind,
         evidence.url,
@@ -106,6 +115,7 @@ class LcoreEvidence:
     title: str | None = None
     excerpt: str | None = None
     score: float | None = None
+    support: SupportKind | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +127,7 @@ class LcoreResult:
     context_id: str | None
     evidence: tuple[LcoreEvidence, ...] = ()
     evidence_status: EvidenceStatus = "unavailable"
+    truncated: bool = False
 
 
 class LcoreClient:
@@ -136,13 +147,8 @@ class LcoreClient:
         self._client: Client | None = None
         self._lock = asyncio.Lock()
 
-    async def search(
-        self,
-        query: str,
-        *,
-        context_id: str | None = None,
-    ) -> LcoreResult:
-        """Send one question to LCORE and normalize the completed result."""
+    async def search(self, query: str) -> LcoreResult:
+        """Send one question to LCORE in a fresh conversation."""
         text = query.strip()
         if not text:
             raise ValueError("query must not be empty")
@@ -152,7 +158,6 @@ class LcoreClient:
             role=Role.user,
             parts=[Part(root=TextPart(text=text))],
             message_id=str(uuid4()),
-            context_id=context_id,
         )
 
         last_event: ClientEvent | Message | None = None
@@ -191,9 +196,13 @@ class LcoreClient:
                 LcoreErrorKind.INVALID_RESPONSE, "LCORE returned no response"
             )
         if isinstance(last_event, Message):
-            return _result_from_message(last_event)
-        task = last_event[0]
-        return _result_from_task(task)
+            result = _result_from_message(last_event)
+        else:
+            result = _result_from_task(last_event[0])
+        limit = self._settings.workflow.max_material_chars
+        if len(result.text) <= limit:
+            return result
+        return replace(result, text=result.text[:limit].rstrip(), truncated=True)
 
     async def aclose(self) -> None:
         """Close the HTTP client when this instance created it."""
@@ -352,11 +361,27 @@ def _extract_evidence(
         containers.extend(_part_containers(artifact.parts))
     containers.extend(_part_containers(parts))
 
+    envelope_status: str | None = None
     found_empty_payload = False
     found_nonempty_payload = False
     evidence: list[LcoreEvidence] = []
     seen: set[EvidenceKey] = set()
     for container in containers:
+        envelope = _as_envelope(container)
+        if envelope is not None:
+            declared = _as_text(envelope.get("status"))
+            if declared in ENVELOPE_STATUSES and envelope_status is None:
+                envelope_status = declared
+            documents = envelope.get("documents")
+            if isinstance(documents, list):
+                found_empty_payload = found_empty_payload or not documents
+                found_nonempty_payload = (
+                    found_nonempty_payload or bool(documents)
+                )
+                for item in documents:
+                    parsed = _parse_document(item)
+                    if parsed is not None:
+                        _append_unique(parsed, evidence, seen)
         documents, has_documents = _evidence_items(
             container, EVIDENCE_DOCUMENT_KEYS
         )
@@ -378,11 +403,26 @@ def _extract_evidence(
 
     if evidence:
         return tuple(evidence), "available"
+    if envelope_status == "none":
+        return (), "none"
+    if envelope_status == "not_configured":
+        return (), "not_configured"
+    if envelope_status == "unavailable":
+        return (), "unavailable"
     if found_nonempty_payload:
         return (), "unavailable"
     if found_empty_payload:
         return (), "none"
     return (), "unavailable"
+
+
+def _as_envelope(container: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    nested = container.get(EVIDENCE_ENVELOPE_KEY)
+    if isinstance(nested, Mapping):
+        return nested
+    if "documents" in container and "status" in container:
+        return container
+    return None
 
 
 def _part_containers(parts: Sequence[Part]) -> list[Mapping[str, Any]]:
@@ -415,8 +455,9 @@ def _parse_document(item: Any) -> LcoreEvidence | None:
         kind="document",
         source=_as_text(item.get("source")),
         document_id=_as_text(item.get("document_id")),
-        url=_as_text(item.get("doc_url")),
-        title=_as_text(item.get("doc_title")),
+        url=_as_text(item.get("url")) or _as_text(item.get("doc_url")),
+        title=_as_text(item.get("title")) or _as_text(item.get("doc_title")),
+        support=_as_support(item.get("support")),
     )
     if not any((evidence.document_id, evidence.url, evidence.title)):
         return None
@@ -468,3 +509,11 @@ def _as_score(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return float(value)
+
+
+def _as_support(value: Any) -> SupportKind | None:
+    if value == "retrieved":
+        return "retrieved"
+    if value == "cited":
+        return "cited"
+    return None

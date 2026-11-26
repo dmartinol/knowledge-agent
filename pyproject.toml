@@ -1,12 +1,13 @@
 [project]
 name = "knowledge-agent"
 version = "0.1.0"
-description = "An A2A knowledge-search agent backed by LCORE"
+description = "An A2A knowledge-search agent with agent-owned reasoning and LCORE retrieval"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
 dependencies = [
     "a2a-sdk[http-server]>=0.3.4,<0.4.0",
     "pydantic>=2.11.3",
+    "pydantic-ai-slim[openai]>=2.75,<2.76",
     "uvicorn>=0.30",
 ]
 

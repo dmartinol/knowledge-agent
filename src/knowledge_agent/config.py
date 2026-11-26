@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from enum import StrEnum
 from typing import Self
 from urllib.parse import urlparse
 
@@ -12,6 +11,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SecretStr,
     ValidationError,
     field_validator,
     model_validator,
@@ -21,18 +21,13 @@ DEFAULT_LCORE_AGENT_CARD_URL = "http://localhost:8080/.well-known/agent-card.jso
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8081
 DEFAULT_MAX_ROUNDS = 2
+DEFAULT_MAX_MATERIAL_CHARS = 12_000
 DEFAULT_UPSTREAM_TIMEOUT_SECONDS = 90
 DEFAULT_TASK_DEADLINE_SECONDS = 180
 DEFAULT_MAX_CONCURRENT_TASKS = 4
-
-
-class FollowUpPolicy(StrEnum):
-    """How the workflow decides whether to run its single follow-up search."""
-
-    EVIDENCE = "evidence"
-    AUTO = "auto"
-    HEURISTIC = "heuristic"
-    NEVER = "never"
+DEFAULT_AGENT_LLM_TIMEOUT_SECONDS = 60
+DEFAULT_AGENT_LLM_REQUEST_LIMIT = 6
+DEFAULT_AGENT_LLM_TOTAL_TOKENS_LIMIT = 60_000
 
 
 class ConfigError(ValueError):
@@ -65,15 +60,15 @@ def _describe_errors(exc: ValidationError) -> str:
 
 
 class WorkflowLimits(BaseModel):
-    """Bounded-workflow limits and follow-up behavior."""
+    """Bounded-workflow limits."""
 
     model_config = ConfigDict(frozen=True)
 
     max_rounds: int = Field(default=DEFAULT_MAX_ROUNDS)
+    max_material_chars: int = Field(default=DEFAULT_MAX_MATERIAL_CHARS, ge=1)
     upstream_timeout_seconds: int = Field(default=DEFAULT_UPSTREAM_TIMEOUT_SECONDS, ge=1)
     task_deadline_seconds: int = Field(default=DEFAULT_TASK_DEADLINE_SECONDS, ge=1)
     max_concurrent_tasks: int = Field(default=DEFAULT_MAX_CONCURRENT_TASKS, ge=1)
-    follow_up_policy: FollowUpPolicy = FollowUpPolicy.AUTO
 
     @model_validator(mode="after")
     def _rounds_allow_one_follow_up(self) -> Self:
@@ -94,6 +89,42 @@ class WorkflowLimits(BaseModel):
         return self
 
 
+class AgentModelSettings(BaseModel):
+    """Agent-owned OpenAI-compatible reasoning model configuration."""
+
+    model_config = ConfigDict(frozen=True)
+
+    base_url: str = ""
+    model: str = ""
+    api_key: SecretStr = SecretStr("")
+    timeout_seconds: int = Field(
+        default=DEFAULT_AGENT_LLM_TIMEOUT_SECONDS, ge=1
+    )
+    request_limit: int = Field(default=DEFAULT_AGENT_LLM_REQUEST_LIMIT, ge=1)
+    total_tokens_limit: int = Field(
+        default=DEFAULT_AGENT_LLM_TOTAL_TOKENS_LIMIT, ge=1
+    )
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            return ""
+        return _require_http_url(cleaned.rstrip("/"), "AGENT_LLM_BASE_URL")
+
+    @field_validator("model")
+    @classmethod
+    def _validate_model(cls, value: str) -> str:
+        return value.strip()
+
+    @property
+    def configured(self) -> bool:
+        return bool(
+            self.base_url and self.model and self.api_key.get_secret_value()
+        )
+
+
 class Settings(BaseModel):
     """Environment-backed service configuration."""
 
@@ -104,6 +135,7 @@ class Settings(BaseModel):
     public_url: str = ""
     lcore_agent_card_url: str = DEFAULT_LCORE_AGENT_CARD_URL
     workflow: WorkflowLimits = Field(default_factory=WorkflowLimits)
+    llm: AgentModelSettings = Field(default_factory=AgentModelSettings)
 
     @field_validator("public_url")
     @classmethod
@@ -133,21 +165,28 @@ class Settings(BaseModel):
             port if port is not None else _parse_int(source, "PORT", DEFAULT_PORT)
         )
         public_url = source.get("PUBLIC_URL") or f"http://{resolved_host}:{resolved_port}"
-        raw_policy = (source.get("WORKFLOW_FOLLOW_UP_POLICY") or "").strip()
-        follow_up_policy = FollowUpPolicy.AUTO
-        if raw_policy:
-            try:
-                follow_up_policy = FollowUpPolicy(raw_policy)
-            except ValueError as exc:
-                allowed = ", ".join(policy.value for policy in FollowUpPolicy)
-                raise ConfigError(
-                    "WORKFLOW_FOLLOW_UP_POLICY must be one of "
-                    f"{allowed}, got {raw_policy!r}"
-                ) from exc
+        explicit_model = [
+            (source.get(name) or "").strip()
+            for name in (
+                "AGENT_LLM_BASE_URL",
+                "AGENT_LLM_MODEL",
+                "AGENT_LLM_API_KEY",
+            )
+        ]
+        if any(explicit_model) and not all(explicit_model):
+            raise ConfigError(
+                "AGENT_LLM_BASE_URL, AGENT_LLM_MODEL, and AGENT_LLM_API_KEY "
+                "must be set together"
+            )
         try:
             workflow = WorkflowLimits(
                 max_rounds=_parse_int(
                     source, "WORKFLOW_MAX_ROUNDS", DEFAULT_MAX_ROUNDS
+                ),
+                max_material_chars=_parse_int(
+                    source,
+                    "WORKFLOW_MAX_MATERIAL_CHARS",
+                    DEFAULT_MAX_MATERIAL_CHARS,
                 ),
                 upstream_timeout_seconds=_parse_int(
                     source,
@@ -164,7 +203,35 @@ class Settings(BaseModel):
                     "WORKFLOW_MAX_CONCURRENT_TASKS",
                     DEFAULT_MAX_CONCURRENT_TASKS,
                 ),
-                follow_up_policy=follow_up_policy,
+            )
+            llm = AgentModelSettings(
+                base_url=source.get("AGENT_LLM_BASE_URL")
+                or source.get("OPENAI_BASE_URL")
+                or "",
+                model=source.get("AGENT_LLM_MODEL")
+                or source.get("E2E_OPENAI_MODEL")
+                or "",
+                api_key=SecretStr(
+                    source.get("AGENT_LLM_API_KEY")
+                    or source.get("ENMAAS_KEY")
+                    or source.get("OPENAI_API_KEY")
+                    or ""
+                ),
+                timeout_seconds=_parse_int(
+                    source,
+                    "AGENT_LLM_TIMEOUT_SECONDS",
+                    DEFAULT_AGENT_LLM_TIMEOUT_SECONDS,
+                ),
+                request_limit=_parse_int(
+                    source,
+                    "AGENT_LLM_REQUEST_LIMIT",
+                    DEFAULT_AGENT_LLM_REQUEST_LIMIT,
+                ),
+                total_tokens_limit=_parse_int(
+                    source,
+                    "AGENT_LLM_TOTAL_TOKENS_LIMIT",
+                    DEFAULT_AGENT_LLM_TOTAL_TOKENS_LIMIT,
+                ),
             )
             return cls(
                 host=resolved_host,
@@ -173,6 +240,7 @@ class Settings(BaseModel):
                 lcore_agent_card_url=source.get("LCORE_AGENT_CARD_URL")
                 or DEFAULT_LCORE_AGENT_CARD_URL,
                 workflow=workflow,
+                llm=llm,
             )
         except ValidationError as exc:
             raise ConfigError(_describe_errors(exc)) from exc

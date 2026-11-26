@@ -10,6 +10,7 @@ from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from fastapi import FastAPI
+from pydantic_ai.models import Model
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import BaseRoute, Route
@@ -18,7 +19,7 @@ from knowledge_agent.agent_card import build_agent_card
 from knowledge_agent.config import Settings
 from knowledge_agent.executor import KnowledgeSearchExecutor
 from knowledge_agent.lcore_client import LcoreClient
-from knowledge_agent.workflow import SearchClient
+from knowledge_agent.loop import SearchClient
 
 RPC_PATH = "/a2a"
 HEALTH_PATH = "/a2a/health"
@@ -41,7 +42,10 @@ def _find_endpoint(
 
 
 def create_app(
-    settings: Settings, *, search_client: SearchClient | None = None
+    settings: Settings,
+    *,
+    search_client: SearchClient | None = None,
+    model: Model | None = None,
 ) -> FastAPI:
     card = build_agent_card(settings)
     owned_client: LcoreClient | None = None
@@ -53,7 +57,7 @@ def create_app(
         client = search_client
 
     handler = DefaultRequestHandler(
-        agent_executor=KnowledgeSearchExecutor(settings, client),
+        agent_executor=KnowledgeSearchExecutor(settings, client, model=model),
         task_store=InMemoryTaskStore(),
     )
     sdk_app = A2AStarletteApplication(

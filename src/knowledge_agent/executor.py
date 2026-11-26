@@ -1,37 +1,39 @@
-"""A2A executor for the bounded knowledge search workflow."""
+"""A2A executor for the agent-owned knowledge search loop."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import replace
+from collections.abc import Sequence
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, Part, TaskState, TextPart
+from pydantic_ai.models import Model
 
 from knowledge_agent.config import Settings
-from knowledge_agent.consolidation import consolidate_answer
-from knowledge_agent.lcore_client import LcoreError, LcoreErrorKind
-from knowledge_agent.workflow import (
-    DEADLINE_LIMITATION,
+from knowledge_agent.lcore_client import LcoreErrorKind
+from knowledge_agent.loop import (
+    EMPTY_REQUEST_MESSAGE,
     WORKFLOW_METADATA_KEY,
     SearchClient,
-    WorkflowProgress,
-    WorkflowResult,
-    build_result,
+    SearchState,
     clarification_metadata,
-    clarification_question,
-    compose_query,
-    needs_clarification,
+    compose_prompt,
     read_clarification_question,
-    run_workflow,
 )
+from knowledge_agent.reasoning import (
+    AgentError,
+    AgentErrorKind,
+    ClarificationRequest,
+    run_reasoning,
+)
+from knowledge_agent.render import render_answer
 
 logger = logging.getLogger(__name__)
 
-ERROR_MESSAGES = {
+LCORE_ERROR_MESSAGES = {
     LcoreErrorKind.CARD_UNAVAILABLE: (
         "The upstream knowledge service could not be reached."
     ),
@@ -52,26 +54,36 @@ ERROR_MESSAGES = {
         "The upstream knowledge service returned an unusable response."
     ),
 }
+AGENT_ERROR_MESSAGES = {
+    AgentErrorKind.MODEL_CONFIG_ERROR: "The reasoning model is not configured.",
+    AgentErrorKind.MODEL_UNAVAILABLE: "The reasoning model could not be reached.",
+    AgentErrorKind.MODEL_TIMEOUT: "The reasoning model timed out.",
+    AgentErrorKind.MODEL_LIMIT: (
+        "The reasoning model reached its configured limit."
+    ),
+    AgentErrorKind.MODEL_OUTPUT_INVALID: (
+        "The reasoning model did not produce a usable answer."
+    ),
+}
 GENERIC_ERROR_MESSAGE = "The knowledge search workflow failed."
 CAPACITY_MESSAGE = "The agent is at capacity; please retry later."
-DEADLINE_MESSAGE = (
-    "The workflow deadline was reached before a search result was available."
-)
-EMPTY_REQUEST_MESSAGE = "I need a concrete question to search for."
+DEADLINE_MESSAGE = "The workflow deadline was reached before an answer was ready."
 
 
 class KnowledgeSearchExecutor(AgentExecutor):
-    """Run a bounded decide-search-observe loop over the LCORE client."""
+    """Run one bounded agent-owned reasoning loop per A2A task."""
 
     def __init__(
         self,
         settings: Settings,
         client: SearchClient,
         *,
+        model: Model | None = None,
         semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self._settings = settings
         self._client = client
+        self._model = model
         self._semaphore = (
             semaphore
             if semaphore is not None
@@ -104,135 +116,125 @@ class KnowledgeSearchExecutor(AgentExecutor):
                 await self._complete_with_text(updater, EMPTY_REQUEST_MESSAGE)
                 return
             question = pending_question
-            clarification: str | None = user_input
+            clarification_used = True
+            prompt = compose_prompt(question, user_input)
         else:
-            if needs_clarification(user_input):
-                await updater.update_status(
-                    TaskState.input_required,
-                    message=self._message(
-                        updater, clarification_question(user_input)
-                    ),
-                    final=False,
-                    metadata=clarification_metadata(user_input),
-                )
+            if not user_input:
+                await updater.start_work()
+                await self._complete_with_text(updater, EMPTY_REQUEST_MESSAGE)
                 return
             question = user_input
-            clarification = None
+            clarification_used = False
+            prompt = user_input
 
         await updater.start_work()
         limits = self._settings.workflow
-        progress = WorkflowProgress()
-        consolidated_question = compose_query(question, clarification)
+        state = SearchState(
+            client=self._client,
+            max_searches=limits.max_rounds,
+            clarification_used=clarification_used,
+        )
         acquired = False
         try:
             async with asyncio.timeout(limits.task_deadline_seconds):
                 await self._semaphore.acquire()
                 acquired = True
                 try:
-                    result = await run_workflow(
-                        self._client,
-                        policy=limits.follow_up_policy,
-                        max_rounds=limits.max_rounds,
-                        question=question,
-                        clarification=clarification,
-                        progress=progress,
+                    outcome = await run_reasoning(
+                        self._settings, state, prompt, model=self._model
                     )
-                    if len(progress.results) > 1:
-                        result = await self._consolidate(
-                            result,
-                            question=consolidated_question,
-                            progress=progress,
-                        )
                 finally:
                     self._semaphore.release()
         except TimeoutError:
             if not acquired:
                 await updater.reject(self._message(updater, CAPACITY_MESSAGE))
                 return
-            if not progress.results:
-                await updater.failed(self._message(updater, DEADLINE_MESSAGE))
-                return
-            result = build_result(
-                progress.results,
-                policy=limits.follow_up_policy,
-                searches=progress.searches,
-                follow_up="skipped_limit",
-                extra_limitations=(DEADLINE_LIMITATION,),
-                consolidation=(
-                    "fallback"
-                    if len(progress.results) > 1
-                    else "skipped_single_result"
-                ),
+            await self._fail(
+                updater,
+                DEADLINE_MESSAGE,
+                "deadline",
+                limits_hit=("deadline",),
             )
-        except LcoreError as exc:
+            return
+        except AgentError as exc:
             logger.warning(
-                "LCORE search failed: kind=%s status=%s rpc_code=%s task_state=%s",
+                "Reasoning failed: kind=%s limits=%s",
                 exc.kind,
-                exc.status_code,
-                exc.rpc_code,
-                exc.task_state,
+                exc.limits_hit,
             )
-            await updater.update_status(
-                TaskState.failed,
-                message=self._message(
-                    updater,
-                    ERROR_MESSAGES.get(exc.kind, GENERIC_ERROR_MESSAGE),
-                ),
-                metadata={WORKFLOW_METADATA_KEY: {"error": exc.kind.value}},
+            await self._fail(
+                updater,
+                AGENT_ERROR_MESSAGES.get(exc.kind, GENERIC_ERROR_MESSAGE),
+                exc.kind.value,
+                limits_hit=exc.limits_hit,
             )
             return
 
+        if state.failure is not None:
+            failure = state.failure
+            logger.warning(
+                "LCORE search failed: kind=%s status=%s rpc_code=%s task_state=%s",
+                failure.kind,
+                failure.status_code,
+                failure.rpc_code,
+                failure.task_state,
+            )
+            await self._fail(
+                updater,
+                LCORE_ERROR_MESSAGES.get(failure.kind, GENERIC_ERROR_MESSAGE),
+                failure.kind.value,
+            )
+            return
+
+        decision = outcome.decision
+        if isinstance(decision, ClarificationRequest):
+            await updater.update_status(
+                TaskState.input_required,
+                message=self._message(updater, decision.question),
+                final=False,
+                metadata=clarification_metadata(question),
+            )
+            return
+
+        rendered = render_answer(
+            decision, state, requests=outcome.requests, tokens=outcome.tokens
+        )
         logger.info(
-            "Knowledge search finished: searches=%d evidence_status=%s follow_up=%s",
-            result.searches,
-            result.evidence_status,
-            result.follow_up,
+            "Knowledge search finished: searches=%d evidence_status=%s "
+            "requests=%d",
+            state.searches,
+            rendered.metadata["evidence_status"],
+            outcome.requests,
         )
         await updater.add_artifact(
-            parts=[Part(root=TextPart(text=result.text))],
+            parts=[Part(root=TextPart(text=rendered.text))],
             name="knowledge-search-answer",
-            metadata={WORKFLOW_METADATA_KEY: result.metadata},
+            metadata={WORKFLOW_METADATA_KEY: rendered.metadata},
             last_chunk=True,
         )
         await updater.complete()
-
-    async def _consolidate(
-        self,
-        result: WorkflowResult,
-        *,
-        question: str,
-        progress: WorkflowProgress,
-    ) -> WorkflowResult:
-        """Merge multiple answers with the fixed template, or fall back."""
-        limits = self._settings.workflow
-        try:
-            consolidated = await consolidate_answer(
-                self._client,
-                question=question,
-                results=progress.results,
-            )
-        except LcoreError as exc:
-            logger.warning(
-                "LCORE consolidation failed: kind=%s status=%s",
-                exc.kind,
-                exc.status_code,
-            )
-            return replace(result, consolidation="fallback")
-        if consolidated is None:
-            return replace(result, consolidation="fallback")
-        return build_result(
-            progress.results,
-            policy=limits.follow_up_policy,
-            searches=result.searches,
-            follow_up=result.follow_up,
-            answer_text=consolidated,
-            consolidation="llm",
-        )
 
     async def cancel(
         self, context: RequestContext, event_queue: EventQueue
     ) -> None:
         raise NotImplementedError("task cancellation is not supported")
+
+    async def _fail(
+        self,
+        updater: TaskUpdater,
+        text: str,
+        error: str,
+        *,
+        limits_hit: Sequence[str] = (),
+    ) -> None:
+        metadata: dict[str, object] = {"error": error}
+        if limits_hit:
+            metadata["limits_hit"] = list(limits_hit)
+        await updater.update_status(
+            TaskState.failed,
+            message=self._message(updater, text),
+            metadata={WORKFLOW_METADATA_KEY: metadata},
+        )
 
     async def _complete_with_text(
         self, updater: TaskUpdater, text: str

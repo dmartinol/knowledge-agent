@@ -37,6 +37,13 @@ def main(argv: list[str] | None = None) -> None:
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
+    if not settings.llm.configured:
+        print(
+            "configuration error: AGENT_LLM_BASE_URL, AGENT_LLM_MODEL, and "
+            "AGENT_LLM_API_KEY must be set",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
     uvicorn.run(
         create_app(settings),
         host=settings.host,

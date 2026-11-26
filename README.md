@@ -7,10 +7,11 @@ LCORE executes retrieval against administrator-configured OKP and BYOK sources.
 
 ## Implementation status
 
-This README and the linked design docs describe the target foundation. The
-current runtime still implements the earlier deterministic loop and asks LCORE
-to consolidate multiple answers. The implementation work replaces that baseline
-with the pydantic-ai typed tool loop described here.
+The runtime implements the pydantic-ai typed tool loop described here: the model
+decides clarification, searches, and follow-ups, while LCORE is retrieval-only.
+Two pieces of the target foundation are still pending: the `skills/` tree is
+authored but not yet loaded into the agent, and verified citations depend on the
+upstream structured evidence envelope.
 
 ## Architecture
 
@@ -61,10 +62,11 @@ a typed tool loop:
   the reasoning model is unavailable or returns unusable output, the task fails
   with a stable error.
 
-Agent instructions live in the `skills/` tree and are loaded with
-`pydantic-ai-skills` `SkillsCapability`. The `knowledge-search` skill covers
-clarification and search strategy; `answer-synthesis` covers evidence use,
-answer shape, and gap reporting.
+Agent instructions currently live in `knowledge_agent.reasoning.SYSTEM_PROMPT`.
+The `skills/` tree already holds `knowledge-search` (clarification and search
+strategy) and `answer-synthesis` (evidence use, answer shape, gap reporting);
+loading them through the `Skills` capability of `pydantic-ai-harness` is the next
+step.
 
 ## LCORE client
 
@@ -78,8 +80,11 @@ categories, and the per-call timeout comes from
 
 Current LCORE A2A artifacts carry answer text only. Results therefore report
 `evidence_status="unavailable"` unless the upstream response includes structured
-`referenced_documents` or an equivalent evidence envelope. Inline
-`<|/documentation/...|>` markers are preserved as text and are not citations.
+references: the `evidence{schema_version,status,retrieved_by,documents[]}`
+envelope, or the legacy `referenced_documents`/`rag_chunks` fallback. Only
+documents marked `support=retrieved` become Sources. Material handed to the
+model is truncated to `WORKFLOW_MAX_MATERIAL_CHARS`, and inline
+`<|/documentation/...|>` markers are never citations.
 
 ## Development
 
@@ -120,14 +125,16 @@ with an explicit message.
 | `AGENT_LLM_REQUEST_LIMIT` | `6` | Maximum model requests per task |
 | `AGENT_LLM_TOTAL_TOKENS_LIMIT` | `60000` | Maximum agent model tokens per task |
 | `WORKFLOW_MAX_ROUNDS` | `2` | Maximum LCORE searches: `1` disables the follow-up |
+| `WORKFLOW_MAX_MATERIAL_CHARS` | `12000` | Maximum LCORE characters given to the model per search |
 | `WORKFLOW_UPSTREAM_TIMEOUT_SECONDS` | `90` | Per-call timeout for LCORE A2A requests |
 | `WORKFLOW_TASK_DEADLINE_SECONDS` | `180` | Whole-task budget |
 | `WORKFLOW_MAX_CONCURRENT_TASKS` | `4` | Concurrent task cap |
 
-`WORKFLOW_FOLLOW_UP_POLICY` is retired: the model decides follow-ups and
-`WORKFLOW_MAX_ROUNDS` is the hard search cap. The LCORE defaults stay at 90 s and
-180 s because the local contract report measured RAG answers taking up to 70 s
-over A2A; the MVP's 30 s / 60 s figures would cut off real answers.
+The three `AGENT_LLM_*` model values must be set together; the service refuses to
+start without them. `WORKFLOW_MAX_ROUNDS` is the hard search cap because the
+model decides follow-ups. The LCORE defaults stay at 90 s and 180 s because the
+local contract report measured RAG answers taking up to 70 s over A2A; the MVP's
+30 s / 60 s figures would cut off real answers.
 
 ## Out of scope
 

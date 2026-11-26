@@ -127,15 +127,13 @@ async def _search(
     settings: Settings,
     fake: FakeLcore,
     query: str = "what is a pod?",
-    *,
-    context_id: str | None = None,
 ):
     transport = httpx.MockTransport(fake.handler)
     async with httpx.AsyncClient(
         transport=transport, timeout=httpx.Timeout(5)
     ) as http:
         client = LcoreClient(settings, httpx_client=http)
-        return await client.search(query, context_id=context_id)
+        return await client.search(query)
 
 
 async def test_search_discovers_card_and_sends_no_metadata(
@@ -162,7 +160,7 @@ async def test_search_discovers_card_and_sends_no_metadata(
         assert banned not in encoded
 
 
-async def test_card_is_cached_and_context_id_is_forwarded(
+async def test_each_search_starts_a_fresh_context(
     settings: Settings,
 ) -> None:
     fake = FakeLcore()
@@ -170,12 +168,11 @@ async def test_card_is_cached_and_context_id_is_forwarded(
     async with httpx.AsyncClient(transport=transport) as http:
         client = LcoreClient(settings, httpx_client=http)
         await client.search("first")
-        await client.search("second", context_id="ctx-upstream")
+        await client.search("second")
 
     assert fake.card_requests == 1
-    assert fake.rpc_requests[1]["params"]["message"]["contextId"] == (
-        "ctx-upstream"
-    )
+    assert "contextId" not in fake.rpc_requests[0]["params"]["message"]
+    assert "contextId" not in fake.rpc_requests[1]["params"]["message"]
     assert "metadata" not in fake.rpc_requests[1]["params"]
 
 
@@ -410,3 +407,166 @@ async def test_malformed_card_is_invalid_response(
         await _search(settings, fake)
 
     assert exc_info.value.kind is LcoreErrorKind.INVALID_RESPONSE
+
+
+def _envelope_artifacts(
+    envelope: dict[str, Any], *, text: str = "answer"
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "artifactId": "artifact-1",
+            "parts": [{"kind": "text", "text": text}],
+            "metadata": {"evidence": envelope},
+        }
+    ]
+
+
+async def test_evidence_envelope_is_parsed(settings: Settings) -> None:
+    envelope = {
+        "schema_version": "1",
+        "status": "available",
+        "retrieved_by": "lcore",
+        "documents": [
+            {
+                "source": "okp",
+                "document_id": "doc-1",
+                "title": "Document One",
+                "url": "https://docs.example/one",
+                "support": "retrieved",
+            },
+            {
+                "source": "okp",
+                "document_id": "doc-2",
+                "title": "Document Two",
+                "url": "https://docs.example/two",
+                "support": "cited",
+            },
+        ],
+    }
+    fake = FakeLcore(
+        rpc=_rpc_result(_task_result(artifacts=_envelope_artifacts(envelope)))
+    )
+
+    result = await _search(settings, fake)
+
+    assert result.evidence_status == "available"
+    assert [item.support for item in result.evidence] == ["retrieved", "cited"]
+    first = result.evidence[0]
+    assert first.source == "okp"
+    assert first.document_id == "doc-1"
+    assert first.title == "Document One"
+    assert first.url == "https://docs.example/one"
+
+
+@pytest.mark.parametrize("status", ["none", "unavailable", "not_configured"])
+async def test_evidence_envelope_statuses_are_preserved(
+    settings: Settings, status: str
+) -> None:
+    envelope = {
+        "schema_version": "1",
+        "status": status,
+        "retrieved_by": "lcore",
+        "documents": [],
+    }
+    fake = FakeLcore(
+        rpc=_rpc_result(_task_result(artifacts=_envelope_artifacts(envelope)))
+    )
+
+    result = await _search(settings, fake)
+
+    assert result.evidence == ()
+    assert result.evidence_status == status
+
+
+async def test_documents_deduplicate_on_source_and_document_id(
+    settings: Settings,
+) -> None:
+    envelope = {
+        "status": "available",
+        "documents": [
+            {
+                "source": "okp",
+                "document_id": "doc-1",
+                "title": "Document One",
+                "support": "retrieved",
+            },
+            {
+                "source": "okp",
+                "document_id": "doc-1",
+                "title": "Document One (duplicate)",
+                "support": "retrieved",
+            },
+            {
+                "source": "other",
+                "document_id": "doc-1",
+                "title": "Same id, other source",
+                "support": "retrieved",
+            },
+        ],
+    }
+    fake = FakeLcore(
+        rpc=_rpc_result(_task_result(artifacts=_envelope_artifacts(envelope)))
+    )
+
+    result = await _search(settings, fake)
+
+    assert len(result.evidence) == 2
+    assert [(item.source, item.document_id) for item in result.evidence] == [
+        ("okp", "doc-1"),
+        ("other", "doc-1"),
+    ]
+
+
+async def test_legacy_references_have_no_support_marker(
+    settings: Settings,
+) -> None:
+    artifacts = [
+        {
+            "artifactId": "artifact-1",
+            "parts": [{"kind": "text", "text": "answer"}],
+            "metadata": {
+                "referenced_documents": [
+                    {
+                        "doc_url": "https://docs.example/one",
+                        "doc_title": "Document One",
+                        "source": "okp",
+                        "document_id": "doc-1",
+                    }
+                ]
+            },
+        }
+    ]
+    fake = FakeLcore(rpc=_rpc_result(_task_result(artifacts=artifacts)))
+
+    result = await _search(settings, fake)
+
+    assert result.evidence_status == "available"
+    assert result.evidence[0].support is None
+
+
+async def test_material_is_truncated_to_the_configured_limit() -> None:
+    settings = Settings.from_env(
+        {
+            "LCORE_AGENT_CARD_URL": (
+                "http://lcore.test/.well-known/agent-card.json"
+            ),
+            "WORKFLOW_MAX_MATERIAL_CHARS": "10",
+        }
+    )
+    fake = FakeLcore(rpc=_rpc_result(_task_result(text="x" * 40)))
+
+    result = await _search(settings, fake)
+
+    assert result.text == "x" * 10
+    assert result.truncated is True
+
+
+async def test_material_within_the_limit_is_not_truncated(
+    settings: Settings,
+) -> None:
+    fake = FakeLcore(rpc=_rpc_result(_task_result(text="short answer")))
+
+    result = await _search(settings, fake)
+
+    assert result.text == "short answer"
+    assert result.truncated is False

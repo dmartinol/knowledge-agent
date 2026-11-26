@@ -25,8 +25,8 @@ def build_agent_card(settings: Settings) -> AgentCard:
     return AgentCard(
         name=AGENT_NAME,
         description=(
-            "Evidence-aware knowledge search that answers through Lightspeed "
-            "Core Stack over A2A."
+            "Knowledge search agent that reasons with its own language model "
+            "and uses Lightspeed Core Stack over A2A as a retrieval service."
         ),
         url=settings.rpc_url,
         version=_package_version(),
@@ -46,8 +46,9 @@ def build_agent_card(settings: Settings) -> AgentCard:
                 id=SKILL_ID,
                 name="Knowledge Search",
                 description=(
-                    "Searches the knowledge sources configured in LCORE and "
-                    "answers with the evidence it can verify."
+                    "Decides when to clarify, searches the knowledge sources "
+                    "configured in LCORE, and answers with the evidence it can "
+                    "verify."
                 ),
                 tags=["knowledge-search", "red-hat"],
                 input_modes=["text/plain"],
