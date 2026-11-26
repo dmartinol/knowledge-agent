@@ -197,6 +197,15 @@ helm upgrade knowledge-agent demo/chart/knowledge-agent -n "$NS" --reuse-values 
    uv run --env-file .env knowledge-agent   # serves :8081
    ```
 
+   The A2A transport is the default and returns answer text only. To get
+   Sources from `referenced_documents`, select the REST transport instead;
+   exported variables win over `.env` entries:
+
+   ```bash
+   LCORE_RETRIEVER=rest LCORE_REST_URL=http://127.0.0.1:8080 \
+   uv run --env-file .env knowledge-agent
+   ```
+
 3. Start the console with the Vite dev proxy:
 
    ```bash

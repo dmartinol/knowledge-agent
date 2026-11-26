@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from enum import StrEnum
 from typing import Self
 from urllib.parse import urlparse
 
@@ -18,6 +19,7 @@ from pydantic import (
 )
 
 DEFAULT_LCORE_AGENT_CARD_URL = "http://localhost:8080/.well-known/agent-card.json"
+DEFAULT_LCORE_REST_URL = "http://localhost:8080"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8081
 DEFAULT_MAX_ROUNDS = 2
@@ -29,6 +31,25 @@ DEFAULT_AGENT_LLM_TIMEOUT_SECONDS = 60
 DEFAULT_AGENT_LLM_REQUEST_LIMIT = 6
 DEFAULT_AGENT_LLM_TOTAL_TOKENS_LIMIT = 60_000
 DEFAULT_AGENT_SKILLS_DIR = "skills"
+
+
+class RetrieverKind(StrEnum):
+    """Configured retrieval transport for upstream LCORE calls."""
+
+    A2A = "a2a"
+    REST = "rest"
+
+
+RETRIEVER_VALUES: frozenset[str] = frozenset(kind.value for kind in RetrieverKind)
+
+
+def _normalize_retriever(value: object) -> str:
+    cleaned = str(value).strip().lower()
+    if cleaned not in RETRIEVER_VALUES:
+        raise ValueError(
+            f"LCORE_RETRIEVER must be 'a2a' or 'rest', got {value!r}"
+        )
+    return cleaned
 
 
 class ConfigError(ValueError):
@@ -135,6 +156,8 @@ class Settings(BaseModel):
     port: int = Field(default=DEFAULT_PORT, ge=1, le=65535)
     public_url: str = ""
     lcore_agent_card_url: str = DEFAULT_LCORE_AGENT_CARD_URL
+    lcore_rest_url: str = DEFAULT_LCORE_REST_URL
+    retriever: RetrieverKind = RetrieverKind.A2A
     skills_dir: str = DEFAULT_AGENT_SKILLS_DIR
     workflow: WorkflowLimits = Field(default_factory=WorkflowLimits)
     llm: AgentModelSettings = Field(default_factory=AgentModelSettings)
@@ -148,6 +171,18 @@ class Settings(BaseModel):
     @classmethod
     def _validate_lcore_agent_card_url(cls, value: str) -> str:
         return _require_http_url(value, "LCORE_AGENT_CARD_URL")
+
+    @field_validator("lcore_rest_url")
+    @classmethod
+    def _validate_lcore_rest_url(cls, value: str) -> str:
+        return _require_http_url(value.strip().rstrip("/"), "LCORE_REST_URL")
+
+    @field_validator("retriever", mode="before")
+    @classmethod
+    def _validate_retriever(cls, value: object) -> object:
+        if isinstance(value, RetrieverKind):
+            return value
+        return _normalize_retriever(value)
 
     @field_validator("skills_dir")
     @classmethod
@@ -188,6 +223,14 @@ class Settings(BaseModel):
                 "AGENT_LLM_BASE_URL, AGENT_LLM_MODEL, and AGENT_LLM_API_KEY "
                 "must be set together"
             )
+        try:
+            retriever = RetrieverKind(
+                _normalize_retriever(
+                    source.get("LCORE_RETRIEVER") or RetrieverKind.A2A.value
+                )
+            )
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
         try:
             workflow = WorkflowLimits(
                 max_rounds=_parse_int(
@@ -248,6 +291,9 @@ class Settings(BaseModel):
                 public_url=public_url,
                 lcore_agent_card_url=source.get("LCORE_AGENT_CARD_URL")
                 or DEFAULT_LCORE_AGENT_CARD_URL,
+                lcore_rest_url=source.get("LCORE_REST_URL")
+                or DEFAULT_LCORE_REST_URL,
+                retriever=retriever,
                 skills_dir=source.get("AGENT_SKILLS_DIR")
                 or DEFAULT_AGENT_SKILLS_DIR,
                 workflow=workflow,

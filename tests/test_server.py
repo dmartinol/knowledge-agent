@@ -5,7 +5,9 @@ import httpx
 import pytest
 
 from knowledge_agent.config import Settings
-from knowledge_agent.server import create_app
+from knowledge_agent.lcore_client import LcoreClient
+from knowledge_agent.lcore_rest import RestLcoreClient
+from knowledge_agent.server import build_search_client, create_app
 
 
 @pytest.fixture
@@ -36,6 +38,21 @@ def _message_send(text: str) -> dict:
             }
         },
     }
+
+
+def test_default_transport_is_a2a() -> None:
+    assert isinstance(build_search_client(Settings.from_env({})), LcoreClient)
+
+
+def test_rest_transport_is_selected() -> None:
+    settings = Settings.from_env(
+        {
+            "LCORE_RETRIEVER": "rest",
+            "LCORE_REST_URL": "http://lcore.test:8080",
+        }
+    )
+
+    assert isinstance(build_search_client(settings), RestLcoreClient)
 
 
 @pytest.mark.parametrize(

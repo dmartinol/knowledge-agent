@@ -3,13 +3,19 @@
 Resolve these against the deployed LCORE version and the selected agent model
 before depending on them. Status words are `Verified`, `Decided`, and `Open`.
 
-## 1. Evidence returned over A2A
+## 1. Evidence returned by LCORE
 
 - Verified: the LCORE Agent Card describes a generic text query skill and no
   retrieval metadata.
-- Verified: A2A artifacts currently contain answer text and `conversation_id`;
-  the REST query path exposes chunks and referenced documents, but the agent does
-  not use REST.
+- Verified: A2A artifacts contain answer text and `conversation_id` only.
+- Verified locally: `POST /v1/query` returns `referenced_documents` entries with
+  `doc_url`, `doc_title`, `source`, and `document_id`, and an empty list when
+  retrieval finds nothing.
+- Decided: the REST transport (`LCORE_RETRIEVER=rest`) is the provenance path
+  for the POC; A2A stays the code default and remains text-only. Only
+  `support=retrieved` documents become Sources.
+- Verified: the REST `truncated` field is deprecated in this LCORE build and
+  always false, so only local material truncation is observable.
 - Decided: LCORE answer text is treated as untrusted material, not as a citation
   contract. Only structured references become Sources.
 - Open: the final A2A evidence envelope for stable document IDs, titles, URLs,

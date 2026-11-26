@@ -39,11 +39,13 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 def _log_startup(settings: Settings, skills: SkillBundle) -> None:
     logger.info(
         "Knowledge agent starting: model=%s provider=%s public_url=%s "
-        "lcore_card=%s",
+        "retriever=%s lcore_card=%s lcore_rest=%s",
         settings.llm.model,
         settings.llm.base_url,
         settings.public_url,
+        settings.retriever.value,
         settings.lcore_agent_card_url,
+        settings.lcore_rest_url,
     )
     logger.info("Skills loaded from %s: %s", settings.skills_dir, skills.summary)
 

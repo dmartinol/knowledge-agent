@@ -86,21 +86,32 @@ when the directory is missing or a skill is unusable.
 
 ## LCORE client
 
-`knowledge_agent.lcore_client.LcoreClient` discovers the Agent Card at
-`LCORE_AGENT_CARD_URL`, caches it, and sends one non-streaming `message/send` per
-`search()` call. Requests carry no message metadata, so callers cannot select a
-model, provider, or vector store. Each search uses a fresh LCORE context; the
-workflow never reuses a `contextId`. Failures are normalized to `LcoreError`
-categories, and the per-call timeout comes from
-`WORKFLOW_UPSTREAM_TIMEOUT_SECONDS`.
+Retrieval has two transports behind one `search()` surface, selected once at
+startup by `LCORE_RETRIEVER`. They are never mixed or fallen back between, and
+no request carries caller-selectable model, provider, vector-store, or source
+fields.
 
-Current LCORE A2A artifacts carry answer text only. Results therefore report
-`evidence_status="unavailable"` unless the upstream response includes structured
-references: the `evidence{schema_version,status,retrieved_by,documents[]}`
-envelope, or the legacy `referenced_documents`/`rag_chunks` fallback. Only
-documents marked `support=retrieved` become Sources. Material handed to the
-model is truncated to `WORKFLOW_MAX_MATERIAL_CHARS`, and inline
-`<|/documentation/...|>` markers are never citations.
+**`a2a` (default).** `knowledge_agent.lcore_client.LcoreClient` discovers the
+Agent Card at `LCORE_AGENT_CARD_URL`, caches it, and sends one non-streaming
+`message/send` per search. Each search uses a fresh LCORE context; the workflow
+never reuses a `contextId`. Current A2A artifacts carry answer text only, so
+results report `evidence_status="unavailable"` unless the upstream response
+includes structured references: the
+`evidence{schema_version,status,retrieved_by,documents[]}` envelope, or the
+legacy `referenced_documents`/`rag_chunks` fallback.
+
+**`rest`.** `knowledge_agent.lcore_rest.RestLcoreClient` posts exactly
+`{"query": ...}` to `<LCORE_REST_URL>/v1/query` with no credentials or
+conversation ID. `referenced_documents` become evidence with
+`support=retrieved`, so an answer with at least one traceable document carries
+Sources and `evidence_status="available"`; an empty list reports `none` and the
+answer is labelled unverified.
+
+Only `support=retrieved` documents become Sources in either transport. Material
+handed to the model is truncated to `WORKFLOW_MAX_MATERIAL_CHARS`, and inline
+`<|/documentation/...|>` markers are never citations. Failures are normalized to
+`LcoreError` categories, and the per-call timeout comes from
+`WORKFLOW_UPSTREAM_TIMEOUT_SECONDS`.
 
 ## Development
 
@@ -141,7 +152,9 @@ with an explicit message.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `LCORE_AGENT_CARD_URL` | `http://localhost:8080/.well-known/agent-card.json` | LCORE Agent Card used by the upstream client |
+| `LCORE_AGENT_CARD_URL` | `http://localhost:8080/.well-known/agent-card.json` | LCORE Agent Card used by the `a2a` transport |
+| `LCORE_RETRIEVER` | `a2a` | Upstream retrieval transport: `a2a` or `rest` |
+| `LCORE_REST_URL` | `http://localhost:8080` | LCORE base URL used only by the `rest` transport |
 | `HOST` / `PORT` | `127.0.0.1` / `8081` | Bind address of this service |
 | `PUBLIC_URL` | `http://$HOST:$PORT` | Base URL advertised in the Agent Card |
 | `AGENT_LLM_BASE_URL` | fallback to `OPENAI_BASE_URL` | OpenAI-compatible agent model endpoint |
@@ -153,7 +166,7 @@ with an explicit message.
 | `AGENT_SKILLS_DIR` | `skills` | Directory holding the `SKILL.md` packages the agent loads at startup |
 | `WORKFLOW_MAX_ROUNDS` | `2` | Maximum LCORE searches: `1` disables the follow-up |
 | `WORKFLOW_MAX_MATERIAL_CHARS` | `12000` | Maximum LCORE characters given to the model per search |
-| `WORKFLOW_UPSTREAM_TIMEOUT_SECONDS` | `90` | Per-call timeout for LCORE A2A requests |
+| `WORKFLOW_UPSTREAM_TIMEOUT_SECONDS` | `90` | Per-call timeout for LCORE retrieval requests |
 | `WORKFLOW_TASK_DEADLINE_SECONDS` | `180` | Whole-task budget |
 | `WORKFLOW_MAX_CONCURRENT_TASKS` | `4` | Concurrent task cap |
 

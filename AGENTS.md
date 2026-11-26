@@ -5,14 +5,16 @@ and docs/open-questions.md before changing the design or implementing behavior.
 
 ## Architecture boundaries
 
-- This project is a separate A2A service. Its upstream LCORE calls use LCORE's
-  A2A Agent Card and A2A JSON-RPC interface.
+- This project is a separate A2A service. Its upstream LCORE calls use one
+  configured transport: LCORE's A2A Agent Card and JSON-RPC interface (the
+  default) or the REST query endpoint selected with `LCORE_RETRIEVER=rest`.
 - The agent owns its control plane through a pydantic-ai typed tool loop and an
   agent-owned OpenAI-compatible model provider. Do not route clarification,
   follow-up decisions, consolidation, or formatting through LCORE.
-- Do not use LCORE REST query endpoints, import LCORE Python modules, or connect
-  to LCORE's model providers, vector stores, OKP, or BYOK backends unless the
-  architecture is explicitly reconsidered.
+- Do not import LCORE Python modules or connect to LCORE's model providers,
+  vector stores, OKP, or BYOK backends. REST requests carry only the query: no
+  credentials, conversation IDs, or model, provider, vector-store, and
+  source-selection fields.
 - LCORE deployment configuration is the authority for retrieval sources. Never
   let caller input or message metadata select a vector store, source scope,
   provider, or LCORE model.

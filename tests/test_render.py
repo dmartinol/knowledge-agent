@@ -49,7 +49,9 @@ def test_answer_is_rendered_with_gaps_and_sources_in_order() -> None:
     state = _state(_result(_document("doc-1", title="Route concepts")))
     answer = KnowledgeAnswer(answer="Routes expose services.", gaps=["No install steps."])
 
-    rendered = render_answer(answer, state, requests=3, tokens=120)
+    rendered = render_answer(
+        answer, state, requests=3, tokens=120, retriever="a2a"
+    )
 
     assert rendered.text == (
         "Routes expose services.\n\n"
@@ -58,6 +60,7 @@ def test_answer_is_rendered_with_gaps_and_sources_in_order() -> None:
     )
     assert rendered.metadata["searches"] == 1
     assert rendered.metadata["search_limit"] == 2
+    assert rendered.metadata["retriever"] == "a2a"
     assert rendered.metadata["evidence"] == [
         {
             "search": 1,
@@ -77,7 +80,11 @@ def test_search_limit_adds_a_gap_and_limit_metadata() -> None:
     state = _state(_result(_document("doc-1")), max_searches=1)
 
     rendered = render_answer(
-        KnowledgeAnswer(answer="Answer."), state, requests=2, tokens=10
+        KnowledgeAnswer(answer="Answer."),
+        state,
+        requests=2,
+        tokens=10,
+        retriever="a2a",
     )
 
     assert SEARCH_LIMIT_GAP in rendered.text
@@ -90,7 +97,11 @@ def test_no_retrieved_references_are_labeled_unverified() -> None:
     state = _state(_result(_document("doc-1", support="cited")))
 
     rendered = render_answer(
-        KnowledgeAnswer(answer="Answer."), state, requests=2, tokens=10
+        KnowledgeAnswer(answer="Answer."),
+        state,
+        requests=2,
+        tokens=10,
+        retriever="a2a",
     )
 
     assert "Sources:" not in rendered.text
@@ -108,13 +119,18 @@ def test_references_are_deduplicated_across_searches() -> None:
     )
 
     rendered = render_answer(
-        KnowledgeAnswer(answer="Answer."), state, requests=4, tokens=20
+        KnowledgeAnswer(answer="Answer."),
+        state,
+        requests=4,
+        tokens=20,
+        retriever="rest",
     )
 
     entries = cast(list[dict[str, Any]], rendered.metadata["evidence"])
     document_ids = [entry["document_id"] for entry in entries]
     assert document_ids == ["doc-1", "doc-2"]
     assert entries[1]["search"] == 2
+    assert rendered.metadata["retriever"] == "rest"
 
 
 def test_clean_text_strips_markers_and_answer_labels() -> None:

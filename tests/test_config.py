@@ -21,6 +21,8 @@ def test_defaults() -> None:
     assert limits.task_deadline_seconds == 180
     assert limits.max_concurrent_tasks == 4
     assert settings.skills_dir == "skills"
+    assert settings.retriever.value == "a2a"
+    assert settings.lcore_rest_url == "http://localhost:8080"
     assert settings.llm.configured is False
     assert settings.llm.request_limit == 6
     assert settings.llm.total_tokens_limit == 60_000
@@ -150,6 +152,28 @@ def test_upstream_timeout_above_deadline_is_rejected() -> None:
 def test_relative_lcore_url_is_rejected() -> None:
     with pytest.raises(ConfigError, match="LCORE_AGENT_CARD_URL"):
         Settings.from_env({"LCORE_AGENT_CARD_URL": "/agent-card.json"})
+
+
+def test_rest_retriever_is_selected_and_normalized() -> None:
+    settings = Settings.from_env(
+        {
+            "LCORE_RETRIEVER": " REST ",
+            "LCORE_REST_URL": "http://lcore.internal:8080/",
+        }
+    )
+
+    assert settings.retriever.value == "rest"
+    assert settings.lcore_rest_url == "http://lcore.internal:8080"
+
+
+def test_unknown_retriever_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="LCORE_RETRIEVER"):
+        Settings.from_env({"LCORE_RETRIEVER": "grpc"})
+
+
+def test_relative_rest_url_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="LCORE_REST_URL"):
+        Settings.from_env({"LCORE_REST_URL": "/v1/query"})
 
 
 def test_skills_directory_override() -> None:

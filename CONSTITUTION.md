@@ -50,10 +50,14 @@ logs and tests.
 
 ## 7. Preserve the A2A service boundary
 
-The agent exposes A2A to its callers and uses LCORE's A2A Agent Card and JSON-RPC
-interface for upstream knowledge work. Keep LCORE-specific transport mapping at
-an adapter boundary. Do not use LCORE REST query endpoints, import LCORE Python
-packages, or couple this project to LCORE's databases or model internals.
+The agent exposes A2A to its callers. Upstream knowledge work uses one LCORE
+transport, selected once at startup: LCORE's A2A Agent Card and JSON-RPC
+interface (the default), or LCORE's REST query endpoint when provenance
+documents are required. Keep LCORE-specific transport mapping at an adapter
+boundary. REST requests carry the query only: no credentials, conversation IDs,
+or model, provider, vector-store, and source-selection fields. Do not import
+LCORE Python packages or couple this project to LCORE's databases or model
+internals.
 
 ## 8. Protect caller and source data
 

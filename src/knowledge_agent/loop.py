@@ -31,6 +31,12 @@ class SearchClient(Protocol):
     async def search(self, query: str) -> LcoreResult: ...
 
 
+class ClosableSearchClient(SearchClient, Protocol):
+    """Search client that owns resources released at shutdown."""
+
+    async def aclose(self) -> None: ...
+
+
 class SearchReference(BaseModel):
     """Structured reference exposed to the model without upstream identifiers."""
 
