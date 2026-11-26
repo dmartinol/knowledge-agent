@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "knowledge-agent.agent.name" . }}
+  labels:
+    {{- include "knowledge-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+spec:
+  # The A2A task store is in memory, so a second replica would lose
+  # clarification state. Keep exactly one replica.
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "knowledge-agent.agent.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "knowledge-agent.agent.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/agent-configmap.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agent
+          image: {{ include "knowledge-agent.agent.image" . }}
+          imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.agent.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "knowledge-agent.agent.name" . }}
+          env:
+            - name: AGENT_LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "knowledge-agent.secretName" . }}
+                  key: {{ .Values.secrets.keys.agentApiKey }}
+          readinessProbe:
+            httpGet:
+              path: /a2a/health
+              port: http
+            initialDelaySeconds: {{ .Values.agent.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.agent.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.agent.probes.readiness.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: /a2a/health
+              port: http
+            initialDelaySeconds: {{ .Values.agent.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.agent.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.agent.probes.liveness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.agent.resources | nindent 12 }}
+          securityContext:
+            {{- include "knowledge-agent.securityContext" . | nindent 12 }}
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "knowledge-agent.agent.name" . }}
+  labels:
+    {{- include "knowledge-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+data:
+  HOST: "0.0.0.0"
+  PORT: {{ .Values.agent.port | quote }}
+  TMPDIR: /tmp
+  AGENT_SKILLS_DIR: {{ .Values.agent.skillsDir | quote }}
+  AGENT_LLM_BASE_URL: {{ required "agent.llm.baseUrl is required" .Values.agent.llm.baseUrl | quote }}
+  AGENT_LLM_MODEL: {{ required "agent.llm.model is required" .Values.agent.llm.model | quote }}
+  AGENT_LLM_TIMEOUT_SECONDS: {{ .Values.agent.llm.timeoutSeconds | quote }}
+  AGENT_LLM_REQUEST_LIMIT: {{ .Values.agent.llm.requestLimit | quote }}
+  AGENT_LLM_TOTAL_TOKENS_LIMIT: {{ .Values.agent.llm.totalTokensLimit | quote }}
+  LCORE_AGENT_CARD_URL: {{ include "knowledge-agent.lcoreCardUrl" . | quote }}
+  WORKFLOW_MAX_ROUNDS: {{ .Values.agent.workflow.maxRounds | quote }}
+  WORKFLOW_MAX_MATERIAL_CHARS: {{ .Values.agent.workflow.maxMaterialChars | quote }}
+  WORKFLOW_UPSTREAM_TIMEOUT_SECONDS: {{ .Values.agent.workflow.upstreamTimeoutSeconds | quote }}
+  WORKFLOW_TASK_DEADLINE_SECONDS: {{ .Values.agent.workflow.taskDeadlineSeconds | quote }}
+  WORKFLOW_MAX_CONCURRENT_TASKS: {{ .Values.agent.workflow.maxConcurrentTasks | quote }}
+  {{- with include "knowledge-agent.agent.publicUrl" . }}
+  PUBLIC_URL: {{ . | quote }}
+  {{- end }}

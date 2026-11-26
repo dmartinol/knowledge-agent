@@ -1,0 +1,11 @@
+apiVersion: v2
+name: knowledge-agent
+description: Knowledge Search Agent demo with its web console and an in-cluster LCORE retrieval service.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"
+keywords:
+  - a2a
+  - knowledge-search
+  - openshift

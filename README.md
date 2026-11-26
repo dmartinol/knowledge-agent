@@ -125,6 +125,14 @@ answers with a single text artifact plus workflow metadata. Repeatable local
 checks, including the A2A Inspector and the expected failure modes, are in
 `docs/local-interop-validation.md`.
 
+## Demo console and OpenShift deployment
+
+`demo/` holds a self-contained demo: a PatternFly console that drives the agent
+over A2A and shows workflow state, evidence, and the raw exchange, plus a Helm
+chart that deploys the agent, the console, and an in-cluster LCORE retrieval
+service on OpenShift. See [the demo guide](demo/README.md) for image builds,
+secret configuration, install, verification, and troubleshooting.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and adjust. Everything comes from the environment;

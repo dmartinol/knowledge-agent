@@ -1,0 +1,18 @@
+{{- if .Values.lcore.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "knowledge-agent.lcore.name" . }}
+  labels:
+    {{- include "knowledge-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: lcore
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "knowledge-agent.lcore.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.lcore.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}

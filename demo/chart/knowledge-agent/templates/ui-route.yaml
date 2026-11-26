@@ -1,0 +1,26 @@
+{{- if and .Values.ui.enabled .Values.ui.route.enabled }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "knowledge-agent.ui.name" . }}
+  labels:
+    {{- include "knowledge-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ui
+  annotations:
+    # A blocking A2A call can outlive the router's 30s default.
+    haproxy.router.openshift.io/timeout: {{ .Values.ui.route.timeout | quote }}
+spec:
+  {{- with .Values.ui.route.host }}
+  host: {{ . | quote }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ include "knowledge-agent.ui.name" . }}
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: {{ .Values.ui.route.tls.termination }}
+    insecureEdgeTerminationPolicy: {{ .Values.ui.route.tls.insecureEdgeTerminationPolicy }}
+  wildcardPolicy: None
+{{- end }}

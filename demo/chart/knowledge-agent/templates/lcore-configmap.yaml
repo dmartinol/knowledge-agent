@@ -1,0 +1,90 @@
+{{- if .Values.lcore.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "knowledge-agent.lcore.name" . }}
+  labels:
+    {{- include "knowledge-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: lcore
+data:
+  lightspeed-stack.yaml: |
+    name: Lightspeed Core Service (LCS)
+    service:
+      host: 0.0.0.0
+      port: {{ .Values.lcore.port }}
+      # LCORE publishes this URL in its Agent Card; without it the card
+      # advertises the bind address and consumers cannot reach the service.
+      base_url: {{ default (printf "http://%s:%v" (include "knowledge-agent.lcore.name" .) .Values.lcore.port) .Values.lcore.serviceBaseUrl | quote }}
+      auth_enabled: false
+      workers: 1
+      color_log: true
+      access_log: true
+    ogx:
+      use_as_library_client: true
+      config:
+        baseline: byo-llm
+    user_data_collection:
+      feedback_enabled: false
+      feedback_storage: "/tmp/data/feedback"
+      transcripts_enabled: false
+      transcripts_storage: "/tmp/data/transcripts"
+    conversation_cache:
+      type: "sqlite"
+      sqlite:
+        db_path: "/tmp/data/conversation-cache.db"
+    authentication:
+      module: "noop"
+    inference:
+      default_provider: openai
+      default_model: {{ .Values.lcore.inference.defaultModel | quote }}
+      providers:
+        - type: openai
+          id: openai
+          # Two consumers read different fields in this LCORE build:
+          #   * LCORE's own startup model discovery uses `config`.
+          #   * The synthesized OGX run.yaml ignores `config`, so it needs
+          #     `api_key_env` and `extra.base_url`.
+          # Keep both in sync; all values are expanded from the environment.
+          config:
+            api_key: ${env.{{ .Values.lcore.inference.apiKeyEnv }}}
+            base_url: ${env.{{ .Values.lcore.inference.baseUrlEnv }}}
+          api_key_env: {{ .Values.lcore.inference.apiKeyEnv }}
+          extra:
+            base_url: ${env.{{ .Values.lcore.inference.baseUrlEnv }}}
+          allowed_models:
+          {{- if .Values.lcore.inference.allowedModels }}
+          {{- range .Values.lcore.inference.allowedModels }}
+            - {{ . | quote }}
+          {{- end }}
+          {{- else }}
+            - {{ .Values.lcore.inference.defaultModel | quote }}
+          {{- end }}
+    rag:
+      retrieval:
+        tool:
+          sources:
+          {{- range .Values.lcore.rag.sources }}
+            - {{ . | quote }}
+          {{- end }}
+          max_chunks: 1
+      okp:
+        rhokp_url: ${env.RH_SERVER_OKP}
+        offline: {{ .Values.lcore.rag.offline }}
+        max_chunks: {{ .Values.lcore.rag.maxChunks }}
+        search_mode: {{ .Values.lcore.rag.searchMode }}
+    customization:
+      agent_card_config:
+        name: {{ .Values.lcore.agentCard.name | quote }}
+        description: {{ .Values.lcore.agentCard.description | quote }}
+        provider:
+          organization: "Red Hat"
+          url: "https://www.redhat.com"
+        skills:
+          - id: "red-hat-knowledge"
+            name: "Red Hat Knowledge Search"
+            description: "Answers questions using Red Hat documentation."
+            tags: ["red-hat", "knowledge"]
+            inputModes: ["text/plain"]
+            outputModes: ["text/plain"]
+        security: []
+{{- end }}
