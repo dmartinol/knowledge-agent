@@ -31,8 +31,18 @@
   gap: 0.25rem;
 }
 
-.ka-drawer-toggle {
+.ka-masthead-actions .ka-rail-toggle,
+.ka-masthead-actions .ka-inspector-toggle {
   display: none;
+}
+
+.ka-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 399;
+  border: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.35);
 }
 
 .ka-grid {
@@ -228,23 +238,43 @@
   line-height: 1.3;
 }
 
+.ka-runs,
+.ka-runs li {
+  min-width: 0;
+}
+
 .ka-run-button {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  max-width: 100%;
   text-align: left;
   white-space: normal;
 }
 
+.ka-run-button .pf-v6-c-button__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .ka-run-line {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.3rem;
-  margin-bottom: 0.25rem;
 }
 
 .ka-run-question {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  min-width: 0;
 }
 
 .ka-run-time {
@@ -282,10 +312,6 @@
   margin: 0.5rem 0;
 }
 
-.ka-backdrop {
-  display: none;
-}
-
 .ka-sr-only {
   position: absolute;
   width: 1px;
@@ -296,6 +322,14 @@
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* Above this width both panes are static columns, so a drawer left open
+   before a resize must not keep dimming the layout. */
+@media (min-width: 1201px) {
+  .ka-backdrop {
+    display: none;
+  }
 }
 
 @media (max-width: 1200px) {
@@ -320,7 +354,7 @@
     transform: translateX(0);
   }
 
-  .ka-drawer-toggle {
+  .ka-masthead-actions .ka-inspector-toggle {
     display: inline-flex;
   }
 }
@@ -347,14 +381,8 @@
     transform: translateX(0);
   }
 
-  .ka-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 399;
-    border: 0;
-    padding: 0;
-    background: rgba(0, 0, 0, 0.35);
+  .ka-masthead-actions .ka-rail-toggle {
+    display: inline-flex;
   }
 
   .ka-composer-bar {

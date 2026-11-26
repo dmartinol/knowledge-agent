@@ -393,18 +393,22 @@ export default function App({ client = DEFAULT_CLIENT }) {
             <span className="ka-muted">{cardError ?? 'Agent Card loading…'}</span>
           )}
           <div className="ka-masthead-actions">
+            {/* Both panes are static columns on wide screens; each toggle only
+                appears once its pane becomes a drawer. */}
             <Button
               variant="plain"
-              className="ka-drawer-toggle"
+              className="ka-rail-toggle"
               aria-expanded={railOpen}
+              aria-controls="ka-rail-slot"
               onClick={() => setRailOpen((open) => !open)}
             >
-              Scenarios
+              Scenarios and runs
             </Button>
             <Button
               variant="plain"
-              className="ka-drawer-toggle"
+              className="ka-inspector-toggle"
               aria-expanded={inspectorOpen}
+              aria-controls="ka-inspector-slot"
               onClick={() => setInspectorOpen((open) => !open)}
             >
               Inspector
@@ -420,7 +424,10 @@ export default function App({ client = DEFAULT_CLIENT }) {
       <div className="ka-shell">
         {masthead}
         <div className="ka-grid">
-          <div className={`ka-rail-slot${railOpen ? ' ka-drawer-open' : ''}`}>
+          <div
+            id="ka-rail-slot"
+            className={`ka-rail-slot${railOpen ? ' ka-drawer-open' : ''}`}
+          >
             <ScenarioRail
               onPickScenario={onPickScenario}
               runs={runs}
@@ -544,7 +551,10 @@ export default function App({ client = DEFAULT_CLIENT }) {
             </div>
           </main>
 
-          <div className={`ka-inspector-slot${inspectorOpen ? ' ka-drawer-open' : ''}`}>
+          <div
+            id="ka-inspector-slot"
+            className={`ka-inspector-slot${inspectorOpen ? ' ka-drawer-open' : ''}`}
+          >
             <aside className="ka-inspector-pane">
               <Inspector
                 task={{ id: active?.taskId, contextId: active?.contextId }}

@@ -55,6 +55,25 @@ function fakeClient(overrides = {}) {
 }
 
 describe('App', () => {
+  it('keeps the panel toggles wired to their panes', async () => {
+    const user = userEvent.setup()
+    render(<App client={fakeClient()} />)
+
+    const inspector = screen.getByRole('button', { name: 'Inspector' })
+    expect(inspector).toHaveAttribute('aria-controls', 'ka-inspector-slot')
+    expect(inspector).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(inspector)
+
+    expect(inspector).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById('ka-inspector-slot')).toHaveClass('ka-drawer-open')
+    expect(screen.getByRole('button', { name: 'Close panel' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Close panel' }))
+
+    expect(inspector).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('lets a new run start while an older one awaits clarification', async () => {
     const user = userEvent.setup()
     const client = fakeClient({

@@ -230,6 +230,7 @@ uses same-origin URLs.
 | Console proxy returns 502 `agent_unreachable` and the UI pod logs `EAI_AGAIN` | The console cannot resolve cluster DNS while egress-isolated. Some clusters re-originate DNS from the node, so port-53 rules never match. Set `networkPolicy.uiAllowAnyEgress=true`; the console keeps working but its egress is no longer scoped to the agent. |
 | Blocking `message/send` through a Route returns the router's 504 page | The call outlived the router timeout. Both Routes carry `haproxy.router.openshift.io/timeout` from `agent.route.timeout` / `ui.route.timeout` (default `240s`). |
 | UI binary build sits in `npm ci` for tens of minutes | The default 500m build limit starves `npm ci`; raise `spec.resources.limits` on the BuildConfig (2 CPU cut it to under four minutes). |
+| Build stays `Pending` and events show `configmaps ... exceeded quota` | Each build injects three `<build>-{ca,global-ca,sys-config}` ConfigMaps that are not garbage collected. Delete the ones from finished builds (`oc get cm -n "$NS" | grep -E 'knowledge-agent-demo(-ui)?-[0-9]+-'`) before rebuilding, or raise the namespace ConfigMap quota. |
 | LCORE answers `failed` / "Internal server error" and logs `ModelHTTPError` from the provider | The provider rejected the LCORE request shape or model. Check the provider directly with the same model id before changing the chart. |
 | LCORE exits with `ModelDiscoveryError` | The provider entry lost its key or endpoint; see the two-consumer note in `templates/lcore-configmap.yaml`. |
 
