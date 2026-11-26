@@ -96,7 +96,7 @@ lcore:
     # Empty means "allow only defaultModel".
     allowedModels: []
     # Environment variables the LCORE container reads for the provider.
-    apiKeyEnv: ENMAAS_KEY
+    apiKeyEnv: OPENAI_API_KEY
     baseUrlEnv: OPENAI_BASE_URL
   rag:
     sources:
@@ -120,7 +120,7 @@ secrets:
   existingSecret: ""
   keys:
     agentApiKey: AGENT_LLM_API_KEY
-    lcoreApiKey: ENMAAS_KEY
+    lcoreApiKey: OPENAI_API_KEY
     lcoreBaseUrl: OPENAI_BASE_URL
     rhokpUrl: RH_SERVER_OKP
 

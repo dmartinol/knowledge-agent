@@ -207,7 +207,7 @@ The agent model is configured through `AGENT_LLM_BASE_URL`,
 `AGENT_LLM_MODEL`, `AGENT_LLM_API_KEY`, `AGENT_LLM_TIMEOUT_SECONDS`,
 `AGENT_LLM_REQUEST_LIMIT`, and `AGENT_LLM_TOTAL_TOKENS_LIMIT`. Local runs may
 fall back to `OPENAI_BASE_URL`, `E2E_OPENAI_MODEL`, and
-`ENMAAS_KEY`/`OPENAI_API_KEY`. All three model values must resolve together;
+`OPENAI_API_KEY`. All three model values must resolve together;
 the service exits at startup when they do not. The LCORE URL and workflow limits
 keep their existing configuration names, and
 `WORKFLOW_MAX_MATERIAL_CHARS` bounds the material handed to the model.

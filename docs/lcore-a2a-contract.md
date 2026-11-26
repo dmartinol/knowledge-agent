@@ -29,7 +29,7 @@ quoted as received.
 
 ```bash
 cd lightspeed-stack
-source .env                      # OPENAI_BASE_URL, E2E_OPENAI_MODEL, RH_SERVER_OKP, ENMAAS_KEY
+source .env                      # OPENAI_BASE_URL, E2E_OPENAI_MODEL, RH_SERVER_OKP, OPENAI_API_KEY
 uv run python src/lightspeed_stack.py -c lightspeed-stack.yaml
 curl -s http://localhost:8080/a2a/health
 ```

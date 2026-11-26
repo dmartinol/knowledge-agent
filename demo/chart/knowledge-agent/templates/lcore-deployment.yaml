@@ -43,7 +43,7 @@ spec:
               value: /tmp
             - name: OTEL_SDK_DISABLED
               value: "true"
-            - name: ENMAAS_KEY
+            - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "knowledge-agent.secretName" . }}

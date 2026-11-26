@@ -223,7 +223,6 @@ class Settings(BaseModel):
                 or "",
                 api_key=SecretStr(
                     source.get("AGENT_LLM_API_KEY")
-                    or source.get("ENMAAS_KEY")
                     or source.get("OPENAI_API_KEY")
                     or ""
                 ),

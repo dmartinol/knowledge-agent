@@ -146,7 +146,7 @@ with an explicit message.
 | `PUBLIC_URL` | `http://$HOST:$PORT` | Base URL advertised in the Agent Card |
 | `AGENT_LLM_BASE_URL` | fallback to `OPENAI_BASE_URL` | OpenAI-compatible agent model endpoint |
 | `AGENT_LLM_MODEL` | fallback to `E2E_OPENAI_MODEL` | Agent reasoning model |
-| `AGENT_LLM_API_KEY` | fallback to `ENMAAS_KEY` or `OPENAI_API_KEY` | Agent model credential |
+| `AGENT_LLM_API_KEY` | fallback to `OPENAI_API_KEY` | Agent model credential |
 | `AGENT_LLM_TIMEOUT_SECONDS` | `60` | Per-request agent model timeout |
 | `AGENT_LLM_REQUEST_LIMIT` | `6` | Maximum model requests per task |
 | `AGENT_LLM_TOTAL_TOKENS_LIMIT` | `60000` | Maximum agent model tokens per task |

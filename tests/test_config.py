@@ -67,7 +67,7 @@ def test_model_configuration_falls_back_to_existing_variables() -> None:
         {
             "OPENAI_BASE_URL": "https://fallback.example.com/v1",
             "E2E_OPENAI_MODEL": "fallback-model",
-            "ENMAAS_KEY": "fallback-key",
+            "OPENAI_API_KEY": "fallback-key",
         }
     )
 

@@ -27,7 +27,7 @@ reasoning, clarification, and answer rendering.
   the `rhokp` namespace at `http://rhokp.rhokp.svc.cluster.local:8080`; change
   `RH_SERVER_OKP` and `networkPolicy.rhokpNamespace` if yours differs.
 - An LCORE inference endpoint/key. In library mode LCORE uses the same
-  OpenAI-compatible provider settings (`OPENAI_BASE_URL`, `ENMAAS_KEY`).
+  OpenAI-compatible provider settings (`OPENAI_BASE_URL`, `OPENAI_API_KEY`).
 
 LCORE is deployed in-cluster in OGX library mode (`ogx.use_as_library_client:
 true`, `baseline: byo-llm`), so there is no separate OGX pod. The image is
@@ -80,7 +80,7 @@ cp demo/chart/knowledge-agent/values-secret.yaml.example /tmp/knowledge-agent-se
 oc apply -f /tmp/knowledge-agent-secrets.yaml -n "$NS"
 ```
 
-The Secret keys default to `AGENT_LLM_API_KEY`, `ENMAAS_KEY`, `OPENAI_BASE_URL`,
+The Secret keys default to `AGENT_LLM_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`,
 and `RH_SERVER_OKP`; override them under `secrets.keys` if you use different
 names.
 

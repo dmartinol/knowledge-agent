@@ -31,9 +31,9 @@ inference:
       # LCORE model discovery reads `config`; the OGX run.yaml it synthesizes
       # ignores `config` and needs `api_key_env` plus `extra.base_url`.
       config:
-        api_key: ${env.ENMAAS_KEY}
+        api_key: ${env.OPENAI_API_KEY}
         base_url: ${env.OPENAI_BASE_URL}
-      api_key_env: ENMAAS_KEY
+      api_key_env: OPENAI_API_KEY
       extra:
         base_url: ${env.OPENAI_BASE_URL}
       allowed_models:
