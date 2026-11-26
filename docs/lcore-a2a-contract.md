@@ -337,3 +337,25 @@ Client-side rules derived from the captures:
 - LCORE evidence contract: still an open upstream gap.
 - OKP MCP missing evidence: not tracked yet; tracker and owner still to be
   identified.
+
+## 15. Implications for agent-owned reasoning
+
+The target foundation moves control-plane reasoning into the agent and keeps
+LCORE as the A2A knowledge service. This report still applies:
+
+- LCORE answer text is the only material available over A2A today. The agent
+  model must treat it as untrusted data, not as instructions or a citation
+  contract.
+- `referenced_documents` or an equivalent artifact-metadata evidence envelope is
+  required before the agent can present verified Sources. Until then answers are
+  labeled unverified.
+- The agent must not ask LCORE to consolidate answers, choose a follow-up, or
+  format the final response. Those are agent-owned model calls.
+- Each agent search starts a fresh LCORE conversation. The agent does not reuse
+  `contextId`, so LCORE turn history cannot become hidden context for a later
+  search.
+- The agent sends no message metadata. LCORE's caller-controllable `model`,
+  `provider`, and `vector_store_ids` fields remain off-limits.
+- The 90 s per-call and 180 s per-task defaults remain appropriate for the
+  measured A2A latency; the agent adds its own model-request, token, and deadline
+  limits around the LCORE calls.

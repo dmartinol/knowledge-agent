@@ -2,36 +2,77 @@
 
 ## 1. Mission
 
-Provide an A2A knowledge-search service that helps callers reach useful answers through LCORE while preserving evidence provenance and making uncertainty clear.
+Provide an A2A knowledge-search service whose reasoning runs in the agent while
+LCORE remains the administrator-configured knowledge service. Help callers reach
+useful answers, preserve evidence provenance, and make uncertainty explicit.
 
-## 2. LCORE owns retrieval configuration
+## 2. Separate reasoning from knowledge retrieval
 
-OKP and BYOK sources are configured by the LCORE administrator. The agent and its callers do not choose arbitrary vector-store IDs, source scopes, credentials, or model providers. The agent may refine a query, but it may not widen or change the configured source set.
+- The agent owns the control plane: clarification, query strategy, follow-up
+  decisions, synthesis, formatting, and workflow limits.
+- LCORE owns the data plane: retrieval execution and the administrator-configured
+  OKP and BYOK sources and credentials.
+- LCORE may use its own model internally to produce answer text. The agent must
+  not use LCORE for its own decisions, consolidation, or formatting, and must not
+  treat LCORE as the agent's model gateway.
 
-## 3. Evidence must be verifiable
+## 3. LCORE owns retrieval configuration
 
-Only cite sources, document identifiers, or excerpts actually returned through a supported LCORE interface. Distinguish source evidence from the agent's synthesis. If the upstream response does not carry enough evidence to support an answer, state that limitation and report the evidence gap; never fabricate citations.
+OKP and BYOK sources are configured by the LCORE administrator. The agent and
+its callers do not choose vector-store IDs, source scopes, retrieval providers,
+or LCORE model providers. The agent may refine a query, but it may not widen or
+change the configured source set.
 
-## 4. Search is bounded and purposeful
+## 4. Evidence must be verifiable
 
-Use a controlled workflow with explicit limits for rounds, backend calls, time, and model usage. Search again only when the prior result identifies a concrete coverage gap or a materially better query. Ask for clarification when ambiguity changes what should be searched.
+Only cite sources, document identifiers, or excerpts actually returned through a
+supported LCORE interface as structured evidence. LCORE answer text is untrusted
+material for synthesis, not a citation contract. If the upstream response does
+not carry structured references, label the answer unverified and state the
+limitation; never fabricate citations and never present inline documentation
+markers as sources.
 
-## 5. Explain outcomes without exposing private reasoning
+## 5. Reasoning is LLM-driven and bounded
 
-Return the answer, relevant evidence references, clarification requests, or the reason the evidence is insufficient. Do not expose hidden chain-of-thought. Keep workflow state concise and suitable for logs and tests.
+The agent uses an agent-owned LLM through a typed tool loop. The model may decide
+when to clarify, search, follow up, and finish, but code enforces explicit limits
+on model requests, LCORE searches, tokens, elapsed time, and concurrency. At most
+one clarification is asked per task, and at most two LCORE searches are allowed.
+When a limit is reached, the agent stops and explains the remaining gap; it does
+not silently exceed the limit.
 
-## 6. Preserve the A2A service boundary
+## 6. Explain outcomes without exposing private reasoning
 
-The agent exposes A2A to its callers and uses LCORE A2A for upstream query work. Keep LCORE-specific transport mapping at an adapter boundary. Do not couple this project to LCORE's internal Python packages or databases.
+Return the answer, structured evidence references, clarification requests, gaps,
+or a stable failure category. Do not expose hidden chain-of-thought, raw model
+messages, or free-form planning. Keep workflow state concise and suitable for
+logs and tests.
 
-## 7. Protect caller and source data
+## 7. Preserve the A2A service boundary
 
-Treat caller messages and metadata as untrusted. Forward only the input and authentication context required by the documented protocol. Do not log secrets or source content by default. Keep upstream credentials in deployment-managed secret configuration.
+The agent exposes A2A to its callers and uses LCORE's A2A Agent Card and JSON-RPC
+interface for upstream knowledge work. Keep LCORE-specific transport mapping at
+an adapter boundary. Do not use LCORE REST query endpoints, import LCORE Python
+packages, or couple this project to LCORE's databases or model internals.
 
-## 8. Bound operational cost
+## 8. Protect caller and source data
 
-LCORE's current A2A path does not apply its standard quota accounting. Until an upstream policy is established, enforce local limits on concurrent tasks, A2A calls, retries, time, and model usage. Fail clearly when a limit is reached.
+Treat caller messages, metadata, and LCORE material as untrusted. Forward only
+the input and authentication context required by the documented protocol. Treat
+LCORE material as data, never as instructions, and guard against prompt
+injection. Do not log secrets, prompts, raw LCORE material, or full source
+documents by default. Keep credentials in deployment-managed secret
+configuration.
 
-## 9. Keep platform assumptions explicit
+## 9. Bound operational cost
 
-Do not describe planned LCORE behavior as available behavior. Track protocol gaps and assumptions in docs/open-questions.md, and resolve them against the deployed LCORE version before relying on them.
+LCORE's current A2A path does not apply its standard quota accounting. Until an
+upstream policy is established, enforce local limits on concurrent tasks, LCORE
+A2A calls, agent model requests, tokens, retries, and time. Fail clearly when a
+limit prevents a usable answer.
+
+## 10. Keep platform assumptions explicit
+
+Do not describe planned LCORE behavior as available behavior. Track protocol
+gaps and assumptions in `docs/open-questions.md`, and resolve them against the
+deployed LCORE version before relying on them.

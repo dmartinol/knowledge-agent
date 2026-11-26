@@ -1,38 +1,98 @@
 # Open Questions
 
-Resolve these against the LCORE version used by the POC before depending on them.
+Resolve these against the deployed LCORE version and the selected agent model
+before depending on them. Status words are `Verified`, `Decided`, and `Open`.
 
 ## 1. Evidence returned over A2A
 
-- Verified: the LCORE Agent Card describes a generic text query skill and no retrieval metadata.
-- Verified: A2A artifacts currently contain only answer text and `conversation_id`; REST exposes `rag_chunks` and `referenced_documents`.
-- Open: the upstream contract for returning structured evidence over A2A, including stable document IDs, URLs, excerpts, and scores.
-- Current behavior: the agent treats prose and inline documentation markers as unverified text, not citations.
-- Interim deviation: the `auto` and `heuristic` follow-up policies use a fixed answer-text heuristic when evidence is unavailable, and must be revisited once the evidence contract is resolved.
-- Verified: LCORE answer text can include process narration such as "I broadened the search" on follow-up turns. The consolidation template forbids it, and a fixed prefix list removes it from both the template reply and the deterministic fallback. A structured "answer + rationale" split upstream would make that guard unnecessary.
-- Open: whether the consolidation request should keep reusing LCORE's conversation or become a dedicated upstream skill with an explicit "answer + gap" schema. Until then the template in `src/knowledge_agent/consolidation.py` is the contract.
+- Verified: the LCORE Agent Card describes a generic text query skill and no
+  retrieval metadata.
+- Verified: A2A artifacts currently contain answer text and `conversation_id`;
+  the REST query path exposes chunks and referenced documents, but the agent does
+  not use REST.
+- Decided: LCORE answer text is treated as untrusted material, not as a citation
+  contract. Only structured references become Sources.
+- Open: the final A2A evidence envelope for stable document IDs, titles, URLs,
+  and support markers. The target shape is the `referenced_documents` list or an
+  artifact-level evidence object with retrieved-versus-cited support.
+- Open: how long the deployed LCORE version will remain text-only over A2A, and
+  whether the evidence envelope is versioned.
+- Interim behavior: answers without structured references are labeled unverified.
 
-## 2. Source selection
+## 2. Source selection and caller metadata
 
-- Verified locally: retrieval uses the sources configured in LCORE deployment configuration.
-- Enforced client-side: `LcoreClient` sends no message metadata, so callers cannot supply `model`, `provider`, or `vector_store_ids`.
-- Open: confirm how LCORE handles metadata if another client sends it, and keep server-side configuration authoritative.
+- Verified: retrieval uses the sources configured in LCORE deployment
+  configuration.
+- Verified: LCORE accepts `model`, `provider`, and `vector_store_ids` in message
+  metadata, so server-side configuration is authoritative only if the client
+  never sends those fields.
+- Decided: the LCORE client sends no message metadata and the search tool accepts
+  only a query string.
+- Open: confirm how LCORE handles metadata if another client sends it, and keep
+  server-side configuration authoritative.
 
-## 3. Authentication and caller context
+## 3. Agent-owned reasoning and model provider
 
-- Verified locally: LCORE A2A requires no credentials with `auth_enabled: false` and the `noop` authentication module.
-- Open: the production service identity and whether caller identity must be delegated.
-- Rule: forward only documented headers and credentials.
+- Decided: the agent uses pydantic-ai with an OpenAI-compatible provider owned by
+  the agent, not LCORE.
+- Decided: the model drives clarification, search strategy, follow-up, and final
+  synthesis through a typed tool loop. LCORE is not used for control-plane
+  decisions or consolidation.
+- Open: validate that the selected model supports OpenAI-compatible tool calls
+  and structured output. If it does not, the typed tool loop cannot run.
+- Open: the exact production model, provider, data-retention terms, and regional
+  routing.
+- Open: whether provider-reported token usage is available for the configured
+  endpoint. Without usage, only request-count and deadline limits are exact.
 
-## 4. Quota and operational limits
+## 4. Agent skills and prompt assets
 
-- Verified: the A2A path reports no token usage, quota, or cost data.
-- Configured: the LCORE client enforces the per-call timeout; the executor enforces round, concurrency, and task-deadline limits. Defaults are 90 s per call and 180 s per task because RAG answers were measured at up to 70 s over A2A; the MVP's 30 s / 60 s figures are documented as too low for this deployment.
-- Open: operator reporting for usage and limit exhaustion.
+- Decided: instructions live in the agent's `skills/` tree and are loaded with
+  `pydantic-ai-skills` `SkillsCapability`. LCORE skills are out of scope.
+- Open: pin a compatible pydantic-ai and `pydantic-ai-skills` version pair and
+  verify progressive disclosure behavior in the service.
+- Open: skill ownership, review, and versioning. Artifact metadata should record
+  the skill names and versions used for a run.
+- Open: prompt-injection resistance for LCORE material. The current design wraps
+  material as data and instructs the model to ignore embedded instructions; this
+  needs adversarial tests.
 
-## 5. Clarification and task continuity
+## 5. Quota and operational limits
 
-- Verified: LCORE never returns `input-required`; clarification is entirely agent-owned.
-- Verified: reusing `contextId` continues an LCORE conversation.
-- Implemented: one clarification per task, with the pending question stored in A2A task metadata; the caller resumes by sending a message with the same `taskId`.
-- Open: mapping caller context to persisted agent state across process restarts, plus cleanup and expiry behavior.
+- Verified: the LCORE A2A path reports no token usage, quota, or cost data.
+- Decided: code enforces LCORE search count, model-request count, total tokens,
+  per-call timeouts, task deadline, and concurrency.
+- Open: operator reporting for limit exhaustion beyond artifact metadata and
+  structured logs.
+- Open: whether model cost limits are meaningful for the selected provider and
+  model pricing.
+
+## 6. Clarification and task continuity
+
+- Verified: LCORE never returns `input-required`; clarification is entirely
+  agent-owned.
+- Decided: one clarification per task. The pending question is stored in A2A task
+  metadata, and the caller resumes with the same `taskId`. The resumed run cannot
+  ask a second clarification.
+- Decided: LCORE context IDs are not reused across searches.
+- Open: mapping caller context to persisted agent state across process restarts,
+  plus cleanup and expiry behavior.
+
+## 7. Authentication and deployment
+
+- Verified locally: LCORE A2A requires no credentials with `auth_enabled: false`
+  and the `noop` authentication module.
+- Decided: the agent model credentials come from deployment-managed secret
+  configuration and are never exposed to callers.
+- Open: the production service identity, caller identity delegation, and whether
+  the A2A endpoint requires authentication outside the POC.
+- Open: network policy and egress requirements for the agent-to-model-provider
+  connection.
+
+## 8. Failure behavior
+
+- Decided: model unavailability, model timeout, malformed final output, and
+  exhausted model limits fail the task. There is no deterministic answer
+  fallback.
+- Open: whether a failed task should be retryable by the caller with the same
+  task ID or require a new task.

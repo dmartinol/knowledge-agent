@@ -1,83 +1,214 @@
 # Architecture
 
+## Implementation status
+
+This document describes the target foundation. The current runtime still
+implements the earlier deterministic decide-search-observe loop and asks LCORE
+to consolidate multiple answers. Those behaviors remain the baseline until the
+agent-owned reasoning implementation lands; they are not the target design.
+
 ## Selected deployment shape
 
-The Knowledge Search agent is a separate service. It accepts A2A requests from calling agents and uses LCORE as its upstream service through A2A. LCORE remains the owner of model serving and administrator-configured OKP/BYOK retrieval.
+The Knowledge Search agent is a separate A2A service. It accepts A2A requests
+from calling agents and uses LCORE through LCORE's A2A interface as its
+knowledge service. The agent owns reasoning. LCORE owns retrieval execution and
+the administrator-configured OKP and BYOK sources.
 
 ~~~mermaid
 sequenceDiagram
     participant Caller as Calling agent
     participant Search as Knowledge Search service
+    participant Agent as pydantic-ai agent
+    participant LLM as Agent-owned LLM provider
     participant LCORE as LCORE A2A service
     participant Sources as Configured OKP/BYOK sources
 
-    Caller->>Search: A2A message/send or message/stream
-    Search->>Search: Validate, plan, and bound the workflow
-    Search->>LCORE: A2A query
+    Caller->>Search: A2A message/send
+    Search->>Agent: Question, clarification state, limits
+    Agent->>LLM: Typed tool-loop turn
+    LLM-->>Agent: Clarify or search_knowledge(query)
+    Agent->>LCORE: A2A message/send (fresh context)
     LCORE->>Sources: Retrieve using deployment configuration
     Sources-->>LCORE: Retrieved results
-    LCORE-->>Search: A2A task and artifact
-    Search->>Search: Assess evidence and decide answer, clarify, or retry
-    Search-->>Caller: A2A task, answer, citations, or evidence gap
+    LCORE-->>Agent: Answer text and structured references, when available
+    Agent->>LLM: Observation plus remaining budget
+    LLM-->>Agent: Search again or final structured answer
+    Agent-->>Search: Answer, gaps, evidence state
+    Search-->>Caller: A2A artifact with Sources/Gaps/limitations and metadata
 ~~~
+
+## Control plane and data plane
+
+| Plane | Owner | Responsibilities |
+| --- | --- | --- |
+| Control | Knowledge Search agent | Clarification, query strategy, follow-up decisions, synthesis, formatting, output validation, workflow limits |
+| Data | LCORE | Retrieval execution, administrator-configured source selection, source credentials, answer text and structured references |
+
+The agent's LLM is an agent-owned OpenAI-compatible provider. LCORE is not the
+agent's model gateway. LCORE may use its own model internally to produce answer
+text; the agent treats that text as untrusted material rather than as a
+reasoning service. The agent never sends its decision prompts or consolidation
+requests to LCORE.
 
 ## Responsibilities
 
 ### Knowledge Search service
 
 - Publish an Agent Card describing the knowledge-search skill.
-- Maintain A2A task and context continuity for its callers.
-- Apply the bounded workflow: clarify when needed, submit a query, assess the returned evidence, optionally retry, and synthesize the outcome.
-- Present citations or explain evidence gaps based only on upstream evidence.
+- Maintain A2A task continuity for clarification and final artifacts.
+- Run a pydantic-ai typed tool loop with an explicit search tool.
+- Enforce clarification, search, model-request, token, deadline, and concurrency
+  limits.
+- Render Sources, Gaps, and limitations from structured data rather than from
+  model-authored citations.
 
 ### LCORE
 
-- Resolve the model and execute retrieval.
-- Use only OKP and BYOK sources configured by the LCORE administrator.
-- Keep source credentials and source authorization within its deployment.
+- Execute retrieval using only the OKP and BYOK sources configured by the LCORE
+  administrator.
+- Return answer text and, when the upstream contract supports it, structured
+  document references.
+- Keep source credentials, source authorization, and retrieval configuration
+  within its deployment.
 
 ## A2A contract
 
-The service uses the LCORE Agent Card and A2A JSON-RPC endpoint for upstream query work. It does not send vector-store IDs in message metadata. It should propagate only authentication information explicitly supported by the LCORE deployment.
+The service exposes A2A JSON-RPC to callers and uses the LCORE Agent Card and
+JSON-RPC endpoint for upstream knowledge work. It does not send message
+metadata, so callers cannot select a model, provider, vector store, or source
+scope. It does not use LCORE REST query endpoints or import LCORE internals.
 
-The agent's A2A response can use task states for progress and clarification, and artifacts for the final answer and evidence. The exact artifact shape depends on what the deployed LCORE A2A interface returns and what the calling agents need.
+The agent's A2A response uses task states for progress and clarification and a
+text artifact for the final answer. The Agent Card still advertises text input
+and output and no streaming. The target Agent Card description identifies the
+service as an agent-owned reasoning agent backed by an LCORE knowledge service.
 
 ### LCORE client
 
-- Discover `LCORE_AGENT_CARD_URL` once, cache the validated card, and require protocol `0.3.x` with JSON-RPC.
-- Use non-streaming `message/send` with a text part, blocking completion, one attempt, and the configured per-call timeout.
-- Send no message metadata. The client API exposes no model, provider, vector-store, or source-selection input.
-- Normalize completed text, task and context IDs, structured evidence, and stable error categories.
-- Treat evidence as unavailable unless LCORE supplies `referenced_documents` or `rag_chunks` in artifact metadata or data parts. Do not infer citations from prose.
+- Discover `LCORE_AGENT_CARD_URL` once, cache the validated card, and require
+  protocol `0.3.x` with JSON-RPC.
+- Use non-streaming `message/send` with a text part, blocking completion, one
+  attempt, and the configured per-call timeout.
+- Send no message metadata. The client API exposes no model, provider,
+  vector-store, or source-selection input.
+- Start a fresh LCORE context for every search. The workflow does not reuse a
+  `contextId`, so material from one search cannot become hidden context for the
+  next.
+- Normalize completed text, structured references, evidence state, and stable
+  error categories. Do not expose LCORE task IDs, tool calls, or raw history to
+  the agent model.
 
-## Controlled workflow
+## Agent reasoning loop
 
-1. Validate the caller's request and ask one clarification question when it is empty, a pronoun-only fragment, or a greeting.
-2. Send the composed question to LCORE, then assess the observation: `evidence_status` plus the normalized evidence.
-3. Run at most one follow-up, selected by `WORKFLOW_FOLLOW_UP_POLICY`:
+The agent uses pydantic-ai with an OpenAI-compatible model provider and a typed
+tool loop:
 
-| Policy | Follow-up when |
+- `search_knowledge(query)` performs one LCORE A2A search and returns an
+  observation containing answer text, evidence status, structured references,
+  the search index, and whether the search limit was reached.
+- The model may ask one clarification, search, search once more when the first
+  observation leaves a concrete gap, or finish with a structured answer.
+- The final output is a discriminated union of `ClarificationRequest` and
+  `KnowledgeAnswer`. `KnowledgeAnswer` contains only the answer text and a list
+  of gaps. Code rejects model-authored Sources, References, or Gaps sections,
+  URLs, empty answers, and answers produced before any search.
+- Code appends Sources from the deduplicated union of structured references
+  across searches, renders Gaps from the structured field, and adds limit
+  limitations.
+
+Agent instructions live in the `skills/` tree and are loaded with
+`pydantic-ai-skills` `SkillsCapability`: `knowledge-search` covers clarification
+and search strategy; `answer-synthesis` covers evidence use, answer shape, and
+gap reporting. Skills own instructions; code owns bounds, validation, and
+evidence rendering.
+
+## Evidence and output contract
+
+LCORE answer text is untrusted material. The agent must treat it as data, never
+as instructions, and must not add facts outside it. Inline
+`<|/documentation/...|>` markers are never citations.
+
+Only structured references count as evidence. The target LCORE evidence
+envelope is the `referenced_documents` list or an equivalent artifact-metadata
+envelope with stable document identity, title, URL, and a `support` marker.
+Only references marked as retrieved become Sources. If LCORE returns no
+structured references, the answer is labeled unverified and the limitation is
+stated explicitly. The agent must not infer citations from prose.
+
+The user-facing artifact contains, in order:
+
+1. The model's answer.
+2. A code-rendered `Gaps:` section, when the model reports gaps or a search limit
+   was reached.
+3. A code-rendered `Sources:` section from structured references, or an explicit
+   unverified limitation when none exist.
+
+Artifact metadata under `knowledge_agent` records the observable workflow state:
+
+| Field | Meaning |
 | --- | --- |
-| `evidence` | LCORE returns an explicit empty evidence set |
-| `auto` | Evidence decides when present; a conservative answer-text heuristic applies only when evidence is unavailable |
-| `heuristic` | The answer is empty, very short, or contains a fixed "no answer" phrase |
-| `never` | Never |
+| `loop` | `typed_tool` |
+| `decision_source` | `llm` |
+| `searches` / `search_limit` | LCORE searches performed and the hard cap |
+| `evidence_status` | `available`, `none`, or `unavailable` |
+| `evidence` | Structured references with their search index |
+| `llm_requests` / `llm_tokens` | Agent model usage, when reported by the provider |
+| `clarification_used` | Whether the task consumed its one clarification |
+| `skills` | Skill names and versions loaded for the run |
+| `limits_hit` | Search, model-request, token, or deadline limits that fired |
+| `error` | Stable failure category for failed tasks |
 
-4. Stop at the round, per-call, task-deadline, and concurrency limits, and say when a gap remains.
-5. Consolidate: when there is more than one search result, send one fixed-template request to the same LCORE A2A endpoint over the existing `contextId` and use its reply as the answer body; otherwise use the last answer. Always append sources from the deduplicated union of structured evidence across searches, never from the consolidation reply. Relay the answer with an explicit unverified label when no structured evidence exists.
+The metadata never contains prompts, raw LCORE material, model messages, or
+chain-of-thought.
 
-The consolidation template is fixed and versioned in `src/knowledge_agent/consolidation.py`; it adds no second model provider and no second retrieval path. If the request fails, times out, or returns blank text, the workflow falls back to the last answer with a documented set of leading narration prefixes removed, and records `consolidation: fallback`. Per-search provenance stays in artifact metadata as `evidence.search`, not in the user-facing answer.
+## Bounds and failure modes
 
-Clarification uses the A2A `input-required` state. The workflow stores the pending question in task metadata and resumes when the caller sends another message for the same task. Follow-up searches reuse LCORE's `contextId`. The executor exposes counts, evidence status, and the follow-up decision, but not hidden reasoning.
+| Bound | Target default | Enforced by |
+| --- | --- | --- |
+| LCORE searches | 2 | `WORKFLOW_MAX_ROUNDS` and the search tool |
+| Agent model requests | 6 | pydantic-ai `UsageLimits` |
+| Agent tokens | 60,000 | pydantic-ai `UsageLimits` |
+| Agent model call | 60 s | Model-provider timeout |
+| LCORE call | 90 s | LCORE client |
+| Whole task | 180 s | `asyncio.timeout` |
+| Concurrent tasks | 4 | Semaphore |
+| Clarifications | 1 | Executor and task metadata |
 
-The loop and its termination rules are specified in [the workflow loop](workflow-loop.md).
+- A missing model, model timeout, malformed final output, or exhausted
+  model-request or token limit fails the task with a stable error. There is no
+  deterministic answer fallback.
+- An LCORE error fails the task with the existing stable upstream error
+  categories.
+- Reaching the search cap is not a failure. The model must answer from available
+  material and code appends a search-limit gap.
+- A deadline before a final answer fails the task. No partial answer is
+  presented as a completed one.
+- Concurrency exhaustion rejects the task before work starts.
+
+## Configuration
+
+The agent model is configured through `AGENT_LLM_BASE_URL`,
+`AGENT_LLM_MODEL`, `AGENT_LLM_API_KEY`, `AGENT_LLM_TIMEOUT_SECONDS`,
+`AGENT_LLM_REQUEST_LIMIT`, and `AGENT_LLM_TOTAL_TOKENS_LIMIT`. Local runs may
+fall back to `OPENAI_BASE_URL`, `E2E_OPENAI_MODEL`, and
+`ENMAAS_KEY`/`OPENAI_API_KEY`. The LCORE URL and workflow limits keep their
+existing configuration names. `WORKFLOW_FOLLOW_UP_POLICY` is retired because
+the model, not a rules policy, decides follow-ups.
 
 ## Known constraints
 
-- The current LCORE A2A handler is a general query path, not a dedicated raw-retrieval API.
-- The current LCORE A2A response is text-oriented. The client reports evidence as unavailable; structured evidence handling is forward-compatible but unverified upstream.
-- LCORE's current A2A path does not use standard LCORE quota accounting. Local limits are required until the upstream policy is clarified.
-- LCORE currently accepts vector-store IDs in request metadata. The client sends no metadata, and server-side configuration remains authoritative.
-- The `auto` and `heuristic` follow-up policies infer a possible gap from answer text. That is a documented deviation from strict evidence-driven behavior, used only until LCORE returns structured evidence over A2A.
+- The current LCORE A2A handler is a general query path, not a dedicated
+  retrieval API.
+- The current LCORE A2A response is text-oriented. Structured references are
+  forward-compatible but not yet available in the deployed contract.
+- LCORE's current A2A path does not use standard LCORE quota accounting, and the
+  agent's model provider may not report token usage. Local limits remain
+  mandatory.
+- A typed tool loop requires a model that supports OpenAI-compatible tool calls
+  and structured output.
+- LCORE material can contain untrusted instructions. Prompt-injection handling
+  and provider data-retention policy remain open questions.
 
-See [open questions](open-questions.md) for the validation checklist.
+See [the workflow loop](workflow-loop.md) for the exact loop contract and
+[open questions](open-questions.md) for unresolved upstream and deployment
+details.
