@@ -69,6 +69,8 @@ def test_answer_is_rendered_with_gaps_and_sources_in_order() -> None:
         }
     ]
     assert rendered.metadata["limits_hit"] == []
+    assert rendered.metadata["gaps"] == ["No install steps."]
+    assert rendered.metadata["limitation"] is None
 
 
 def test_search_limit_adds_a_gap_and_limit_metadata() -> None:
@@ -80,6 +82,8 @@ def test_search_limit_adds_a_gap_and_limit_metadata() -> None:
 
     assert SEARCH_LIMIT_GAP in rendered.text
     assert rendered.metadata["limits_hit"] == ["search"]
+    assert rendered.metadata["gaps"] == [SEARCH_LIMIT_GAP]
+    assert rendered.metadata["limitation"] is None
 
 
 def test_no_retrieved_references_are_labeled_unverified() -> None:
@@ -93,6 +97,8 @@ def test_no_retrieved_references_are_labeled_unverified() -> None:
     assert UNVERIFIED_LIMITATION in rendered.text
     assert rendered.metadata["evidence"] == []
     assert rendered.metadata["evidence_status"] == "available"
+    assert rendered.metadata["gaps"] == []
+    assert rendered.metadata["limitation"] == UNVERIFIED_LIMITATION
 
 
 def test_references_are_deduplicated_across_searches() -> None:

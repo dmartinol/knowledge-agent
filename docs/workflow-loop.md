@@ -219,6 +219,8 @@ The successful artifact metadata under `knowledge_agent` is:
   "search_limit": 2,
   "evidence_status": "unavailable",
   "evidence": [],
+  "gaps": [],
+  "limitation": "Unverified: the knowledge service returned no traceable references for this answer.",
   "llm_requests": 4,
   "llm_tokens": 12345,
   "clarification_used": false,
@@ -227,7 +229,10 @@ The successful artifact metadata under `knowledge_agent` is:
 ```
 
 `evidence[]` entries carry the same stable reference identity used for
-deduplication plus their 1-based `search` index. `limits_hit` can contain
+deduplication plus their 1-based `search` index. `gaps` is the code-owned list
+rendered into the `Gaps:` section, including the search-limit gap, and
+`limitation` carries the unverified text, or `null` when references exist, so a
+caller never has to parse the rendered answer. `limits_hit` can contain
 `search`, `model_requests`, `tokens`, or `deadline`. Failed tasks replace the
 success fields with `{"error": "<stable_category>", "limits_hit": [...]}`.
 Failure categories are `model_config_error`, `model_unavailable`,

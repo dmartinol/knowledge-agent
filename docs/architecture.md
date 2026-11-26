@@ -162,6 +162,8 @@ Artifact metadata under `knowledge_agent` records the observable workflow state:
 | `searches` / `search_limit` | LCORE searches performed and the hard cap |
 | `evidence_status` | `available`, `none`, `unavailable`, or `not_configured` |
 | `evidence` | Structured references with their search index |
+| `gaps` | Code-owned gap list, including the search-limit gap |
+| `limitation` | The unverified limitation, or `null` when references exist |
 | `llm_requests` / `llm_tokens` | Agent model usage, when reported by the provider |
 | `clarification_used` | Whether the task consumed its one clarification |
 | `limits_hit` | Search, model-request, token, or deadline limits that fired |
