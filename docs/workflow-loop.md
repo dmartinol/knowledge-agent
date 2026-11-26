@@ -31,6 +31,55 @@ structured evidence envelope.
 | `skills/` tree | Holds the agent instructions for search strategy and answer synthesis; loaded and rendered at startup with `pydantic-ai-harness[skills]` |
 | Result renderer | Appends code-owned Sources, Gaps, and limitations and emits artifact metadata |
 
+## Loop shape
+
+The loop is a reason-act-observe cycle: the model picks the next step, one tool
+call goes to LCORE, the observation returns into the model context, and the model
+either takes another step or finishes. It is a ReAct-shaped loop with three
+deliberate simplifications, and each one constrains the next change:
+
+- the reasoning step has no stored artifact;
+- the action space has exactly one entry;
+- the bounds are code, not prompt text.
+
+| What the loop needs | Where it lives |
+| --- | --- |
+| The question | Caller text from the A2A message; a resumed clarification is recombined with the stored question by `compose_prompt()` in `loop.py` |
+| Standing orders | Code-owned invariants plus the `knowledge-search` and `answer-synthesis` skills, rendered into instructions once at startup |
+| The decision-maker | The agent-owned model in `reasoning.py`; one `agent.run` per task |
+| What the model can do | One tool, `search_knowledge(query)`. Finishing or clarifying is not a tool: it is the typed output |
+| Running the action | `search_knowledge()` in `loop.py` → LCORE client → one A2A `message/send` |
+| What comes back | `SearchObservation`: text, evidence status, references, search index, truncation, and `limit_reached` |
+| Remembering the round | pydantic-ai's in-memory message history for the run, plus `SearchState` for counters, results, and failure |
+| Deciding it is over | `validate_decision()` in `reasoning.py` accepts `KnowledgeAnswer` or `ClarificationRequest` and rejects ordering violations with a retry |
+| Stopping | Search cap, model request and token limits, task deadline, concurrency slot |
+
+Two properties of this loop are easy to miss when reading the code. The model's
+reasoning is not recoverable after the run, by design: there is no thought field,
+scratchpad, or plan object. When an answer looks wrong, the observable inputs are
+the observation it received, the search count, `evidence_status`, and the usage
+counts; add logging or a metadata field only if those are genuinely insufficient.
+The observation is also another agent's answer rather than a set of documents, so
+it is already synthesized and lossy. That is why evidence status and references
+travel beside it, and why model-written text never becomes a citation.
+
+### Changes that need a design decision
+
+- **A second tool.** The action space is one entry wide, and the follow-up
+  decision is bounded partly because there is nothing else to call. A second
+  tool means the model chooses between actions with no plan artifact and no cap
+  on total work. Treat it as a redesign, not an addition.
+- **A refusal path for any new action.** When the search cap is reached the tool
+  returns `limit_reached` with empty text instead of calling LCORE, which forces
+  the model to answer from the material it has. A new action without an
+  equivalent refusal can blow the task budget.
+- **Durable state after the run.** The conversational trace is discarded with the
+  run; `SearchState` and task metadata are the only durable parts. Anything a
+  caller needs later must be on the artifact, not in the message history.
+- **Reusing LCORE context.** Every search starts a fresh LCORE conversation, so
+  a follow-up query must carry its own context. Nothing is inherited from the
+  previous round, and the model cannot "continue" where the last search stopped.
+
 ## Request lifecycle
 
 1. The executor validates the caller's text and reads any pending clarification

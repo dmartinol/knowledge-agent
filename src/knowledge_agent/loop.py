@@ -1,4 +1,7 @@
-"""State and contracts for the agent-owned reasoning loop."""
+"""State and contracts for the agent-owned reasoning loop.
+
+See `docs/workflow-loop.md` for the loop shape and its component mapping.
+"""
 
 from __future__ import annotations
 

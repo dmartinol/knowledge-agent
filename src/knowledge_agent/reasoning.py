@@ -1,4 +1,7 @@
-"""Agent-owned reasoning: the pydantic-ai typed tool loop."""
+"""Agent-owned reasoning: the pydantic-ai typed tool loop.
+
+See `docs/workflow-loop.md` for the loop shape and its component mapping.
+"""
 
 from __future__ import annotations
 

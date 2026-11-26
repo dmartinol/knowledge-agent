@@ -106,7 +106,9 @@ service as an agent-owned reasoning agent backed by an LCORE knowledge service.
 ## Agent reasoning loop
 
 The agent uses pydantic-ai with an OpenAI-compatible model provider and a typed
-tool loop:
+tool loop. The shape is a bounded ReAct cycle: one tool, code-enforced bounds,
+and no stored reasoning step. `workflow-loop.md` maps each part of it to the
+code:
 
 - `search_knowledge(query)` performs one LCORE A2A search and returns an
   observation containing answer text, evidence status, structured references,
