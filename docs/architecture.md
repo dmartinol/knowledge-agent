@@ -98,6 +98,10 @@ service as an agent-owned reasoning agent backed by an LCORE knowledge service.
 - Normalize completed text, structured references, evidence state, and stable
   error categories. Do not expose LCORE task IDs, tool calls, or raw history to
   the agent model.
+- Call the endpoint the card advertises, but treat a loopback or unspecified
+  host as a bind address: substitute the scheme, host, and port of
+  `LCORE_AGENT_CARD_URL` and keep the advertised path. A peer that publishes
+  `localhost` would otherwise fail every search as an unreachable endpoint.
 
 ## Agent reasoning loop
 

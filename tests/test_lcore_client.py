@@ -33,11 +33,12 @@ def _card_payload(
     *,
     protocol_version: str = "0.3.0",
     preferred_transport: str = "JSONRPC",
+    url: str = "http://lcore.test/a2a",
 ) -> dict[str, Any]:
     return {
         "name": "Test LCORE",
         "description": "Test knowledge service",
-        "url": "http://lcore.test/a2a",
+        "url": url,
         "version": "0.1.0",
         "protocolVersion": protocol_version,
         "preferredTransport": preferred_transport,
@@ -101,6 +102,7 @@ class FakeLcore:
         self.rpc = rpc if rpc is not None else _rpc_result(_task_result())
         self.card_requests = 0
         self.rpc_requests: list[dict[str, Any]] = []
+        self.rpc_urls: list[str] = []
         self.card_handler: Callable[[httpx.Request], httpx.Response] | None = (
             None
         )
@@ -116,6 +118,7 @@ class FakeLcore:
             return httpx.Response(200, json=self.card)
         if request.url.path == "/a2a":
             self.rpc_requests.append(json.loads(request.content))
+            self.rpc_urls.append(str(request.url))
             if self.rpc_handler is not None:
                 return self.rpc_handler(request)
             if isinstance(self.rpc, httpx.Response):
@@ -175,6 +178,31 @@ async def test_card_discovery_logs_the_reference_used(
     assert "name=Test LCORE" in text
     assert "version=0.1.0" in text
     assert "url=http://lcore.test/a2a" in text
+
+
+async def test_loopback_card_endpoint_is_reached_through_the_configured_host(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake = FakeLcore(card=_card_payload(url="http://localhost:8080/a2a"))
+    transport = httpx.MockTransport(fake.handler)
+
+    with caplog.at_level(logging.INFO, logger="knowledge_agent.lcore_client"):
+        async with httpx.AsyncClient(transport=transport) as http:
+            await LcoreClient(settings, httpx_client=http).search("what is a pod?")
+
+    assert fake.rpc_urls == ["http://lcore.test/a2a"]
+    assert "url=http://localhost:8080/a2a" in caplog.text
+    assert "url=http://lcore.test/a2a" in caplog.text
+
+
+async def test_published_card_endpoint_is_used_unchanged(
+    settings: Settings,
+) -> None:
+    fake = FakeLcore(card=_card_payload(url="http://other-host:9000/a2a"))
+
+    await _search(settings, fake)
+
+    assert fake.rpc_urls == ["http://other-host:9000/a2a"]
 
 
 async def test_each_search_starts_a_fresh_context(
