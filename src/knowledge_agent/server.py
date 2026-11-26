@@ -1,0 +1,76 @@
+"""FastAPI application exposing the A2A surface."""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable, Sequence
+from typing import cast
+
+from a2a.server.apps import A2AStarletteApplication
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import InMemoryTaskStore
+from fastapi import FastAPI
+from starlette.requests import Request
+from starlette.responses import Response
+from starlette.routing import BaseRoute, Route
+
+from knowledge_agent.agent_card import build_agent_card
+from knowledge_agent.config import Settings
+from knowledge_agent.executor import KnowledgeSearchExecutor
+
+RPC_PATH = "/a2a"
+HEALTH_PATH = "/a2a/health"
+CARD_PREFIX = "/.well-known/"
+
+Endpoint = Callable[[Request], Awaitable[Response]]
+
+
+def _find_endpoint(
+    routes: Sequence[BaseRoute], path: str, method: str
+) -> Endpoint:
+    for route in routes:
+        if (
+            isinstance(route, Route)
+            and route.path == path
+            and method in (route.methods or set())
+        ):
+            return cast(Endpoint, route.endpoint)
+    raise RuntimeError(f"A2A SDK application is missing the {method} {path} route")
+
+
+def create_app(settings: Settings) -> FastAPI:
+    card = build_agent_card(settings)
+    handler = DefaultRequestHandler(
+        agent_executor=KnowledgeSearchExecutor(settings),
+        task_store=InMemoryTaskStore(),
+    )
+    sdk_app = A2AStarletteApplication(
+        agent_card=card,
+        http_handler=handler,
+    ).build()
+
+    app = FastAPI(title=card.name, version=card.version)
+
+    app.add_api_route(
+        RPC_PATH,
+        _find_endpoint(sdk_app.routes, "/", "POST"),
+        methods=["POST"],
+        include_in_schema=False,
+    )
+    for route in sdk_app.routes:
+        if isinstance(route, Route) and route.path.startswith(CARD_PREFIX):
+            app.add_api_route(
+                route.path,
+                cast(Endpoint, route.endpoint),
+                methods=sorted(route.methods or {"GET"}),
+                include_in_schema=False,
+            )
+
+    @app.get(HEALTH_PATH)
+    async def health() -> dict[str, str]:
+        return {
+            "status": "healthy",
+            "service": "knowledge-search-agent",
+            "version": card.version,
+        }
+
+    return app
