@@ -48,6 +48,18 @@ EVIDENCE_CHUNK_KEYS = ("rag_chunks",)
 
 EvidenceKind = Literal["document", "chunk"]
 EvidenceStatus = Literal["unavailable", "none", "available"]
+EvidenceKey = tuple[str, str | None, str | None, str | None, str | None]
+
+
+def evidence_key(evidence: LcoreEvidence) -> EvidenceKey:
+    """Identity used to deduplicate one evidence item across normalizations."""
+    return (
+        evidence.kind,
+        evidence.url,
+        evidence.document_id,
+        evidence.chunk_id,
+        evidence.excerpt,
+    )
 
 
 class LcoreErrorKind(StrEnum):
@@ -343,9 +355,7 @@ def _extract_evidence(
     found_empty_payload = False
     found_nonempty_payload = False
     evidence: list[LcoreEvidence] = []
-    seen: set[tuple[str, str | None, str | None, str | None, str | None]] = (
-        set()
-    )
+    seen: set[EvidenceKey] = set()
     for container in containers:
         documents, has_documents = _evidence_items(
             container, EVIDENCE_DOCUMENT_KEYS
@@ -438,15 +448,9 @@ def _parse_chunk(item: Any) -> LcoreEvidence | None:
 def _append_unique(
     evidence: LcoreEvidence,
     items: list[LcoreEvidence],
-    seen: set[tuple[str, str | None, str | None, str | None, str | None]],
+    seen: set[EvidenceKey],
 ) -> None:
-    key = (
-        evidence.kind,
-        evidence.url,
-        evidence.document_id,
-        evidence.chunk_id,
-        evidence.excerpt,
-    )
+    key = evidence_key(evidence)
     if key in seen:
         return
     seen.add(key)

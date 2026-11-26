@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager
 from typing import cast
 
 from a2a.server.apps import A2AStarletteApplication
@@ -16,6 +17,8 @@ from starlette.routing import BaseRoute, Route
 from knowledge_agent.agent_card import build_agent_card
 from knowledge_agent.config import Settings
 from knowledge_agent.executor import KnowledgeSearchExecutor
+from knowledge_agent.lcore_client import LcoreClient
+from knowledge_agent.workflow import SearchClient
 
 RPC_PATH = "/a2a"
 HEALTH_PATH = "/a2a/health"
@@ -37,10 +40,20 @@ def _find_endpoint(
     raise RuntimeError(f"A2A SDK application is missing the {method} {path} route")
 
 
-def create_app(settings: Settings) -> FastAPI:
+def create_app(
+    settings: Settings, *, search_client: SearchClient | None = None
+) -> FastAPI:
     card = build_agent_card(settings)
+    owned_client: LcoreClient | None = None
+    client: SearchClient
+    if search_client is None:
+        owned_client = LcoreClient(settings)
+        client = owned_client
+    else:
+        client = search_client
+
     handler = DefaultRequestHandler(
-        agent_executor=KnowledgeSearchExecutor(settings),
+        agent_executor=KnowledgeSearchExecutor(settings, client),
         task_store=InMemoryTaskStore(),
     )
     sdk_app = A2AStarletteApplication(
@@ -48,7 +61,13 @@ def create_app(settings: Settings) -> FastAPI:
         http_handler=handler,
     ).build()
 
-    app = FastAPI(title=card.name, version=card.version)
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        yield
+        if owned_client is not None:
+            await owned_client.aclose()
+
+    app = FastAPI(title=card.name, version=card.version, lifespan=lifespan)
 
     app.add_api_route(
         RPC_PATH,

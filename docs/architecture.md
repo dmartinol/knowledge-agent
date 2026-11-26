@@ -52,13 +52,25 @@ The agent's A2A response can use task states for progress and clarification, and
 
 ## Controlled workflow
 
-1. Validate the caller's request and check whether ambiguity would change the search target.
-2. Ask a clarification question when needed; otherwise send a focused query to LCORE.
-3. Assess the returned evidence for relevance and coverage.
-4. Retry only for a specific, explainable gap and only within configured limits.
-5. Answer with supported evidence references, or state what the evidence does not establish.
+1. Validate the caller's request and ask one clarification question when it is empty, a pronoun-only fragment, or a greeting.
+2. Send the composed question to LCORE, then assess the observation: `evidence_status` plus the normalized evidence.
+3. Run at most one follow-up, selected by `WORKFLOW_FOLLOW_UP_POLICY`:
 
-The workflow may store a short structured plan and evidence assessment. It does not expose hidden chain-of-thought.
+| Policy | Follow-up when |
+| --- | --- |
+| `evidence` | LCORE returns an explicit empty evidence set |
+| `auto` | Evidence decides when present; a conservative answer-text heuristic applies only when evidence is unavailable |
+| `heuristic` | The answer is empty, very short, or contains a fixed "no answer" phrase |
+| `never` | Never |
+
+4. Stop at the round, per-call, task-deadline, and concurrency limits, and say when a gap remains.
+5. Consolidate: when there is more than one search result, send one fixed-template request to the same LCORE A2A endpoint over the existing `contextId` and use its reply as the answer body; otherwise use the last answer. Always append sources from the deduplicated union of structured evidence across searches, never from the consolidation reply. Relay the answer with an explicit unverified label when no structured evidence exists.
+
+The consolidation template is fixed and versioned in `src/knowledge_agent/consolidation.py`; it adds no second model provider and no second retrieval path. If the request fails, times out, or returns blank text, the workflow falls back to the last answer with a documented set of leading narration prefixes removed, and records `consolidation: fallback`. Per-search provenance stays in artifact metadata as `evidence.search`, not in the user-facing answer.
+
+Clarification uses the A2A `input-required` state. The workflow stores the pending question in task metadata and resumes when the caller sends another message for the same task. Follow-up searches reuse LCORE's `contextId`. The executor exposes counts, evidence status, and the follow-up decision, but not hidden reasoning.
+
+The loop and its termination rules are specified in [the workflow loop](workflow-loop.md).
 
 ## Known constraints
 
@@ -66,5 +78,6 @@ The workflow may store a short structured plan and evidence assessment. It does 
 - The current LCORE A2A response is text-oriented. The client reports evidence as unavailable; structured evidence handling is forward-compatible but unverified upstream.
 - LCORE's current A2A path does not use standard LCORE quota accounting. Local limits are required until the upstream policy is clarified.
 - LCORE currently accepts vector-store IDs in request metadata. The client sends no metadata, and server-side configuration remains authoritative.
+- The `auto` and `heuristic` follow-up policies infer a possible gap from answer text. That is a documented deviation from strict evidence-driven behavior, used only until LCORE returns structured evidence over A2A.
 
 See [open questions](open-questions.md) for the validation checklist.

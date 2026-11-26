@@ -1,6 +1,6 @@
 import pytest
 
-from knowledge_agent.config import ConfigError, Settings
+from knowledge_agent.config import ConfigError, FollowUpPolicy, Settings
 
 
 def test_defaults() -> None:
@@ -19,6 +19,7 @@ def test_defaults() -> None:
     assert limits.upstream_timeout_seconds == 90
     assert limits.task_deadline_seconds == 180
     assert limits.max_concurrent_tasks == 4
+    assert limits.follow_up_policy is FollowUpPolicy.AUTO
 
 
 def test_environment_overrides() -> None:
@@ -27,19 +28,21 @@ def test_environment_overrides() -> None:
             "HOST": "0.0.0.0",
             "PORT": "9000",
             "LCORE_AGENT_CARD_URL": "http://lcore.internal:8080/.well-known/agent-card.json",
-            "WORKFLOW_MAX_ROUNDS": "3",
+            "WORKFLOW_MAX_ROUNDS": "1",
             "WORKFLOW_UPSTREAM_TIMEOUT_SECONDS": "45",
             "WORKFLOW_TASK_DEADLINE_SECONDS": "60",
             "WORKFLOW_MAX_CONCURRENT_TASKS": "8",
+            "WORKFLOW_FOLLOW_UP_POLICY": "heuristic",
         }
     )
 
     assert settings.public_url == "http://0.0.0.0:9000"
     assert settings.lcore_agent_card_url.startswith("http://lcore.internal")
-    assert settings.workflow.max_rounds == 3
+    assert settings.workflow.max_rounds == 1
     assert settings.workflow.upstream_timeout_seconds == 45
     assert settings.workflow.task_deadline_seconds == 60
     assert settings.workflow.max_concurrent_tasks == 8
+    assert settings.workflow.follow_up_policy is FollowUpPolicy.HEURISTIC
 
 
 def test_public_url_override_wins_and_is_normalized() -> None:
@@ -67,6 +70,16 @@ def test_non_numeric_limit_is_rejected() -> None:
 def test_zero_limit_is_rejected() -> None:
     with pytest.raises(ConfigError, match="max_concurrent_tasks"):
         Settings.from_env({"WORKFLOW_MAX_CONCURRENT_TASKS": "0"})
+
+
+def test_more_than_one_follow_up_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="WORKFLOW_MAX_ROUNDS"):
+        Settings.from_env({"WORKFLOW_MAX_ROUNDS": "3"})
+
+
+def test_unknown_follow_up_policy_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="WORKFLOW_FOLLOW_UP_POLICY"):
+        Settings.from_env({"WORKFLOW_FOLLOW_UP_POLICY": "always"})
 
 
 def test_upstream_timeout_above_deadline_is_rejected() -> None:

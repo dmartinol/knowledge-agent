@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from enum import StrEnum
 from typing import Self
 from urllib.parse import urlparse
 
@@ -23,6 +24,15 @@ DEFAULT_MAX_ROUNDS = 2
 DEFAULT_UPSTREAM_TIMEOUT_SECONDS = 90
 DEFAULT_TASK_DEADLINE_SECONDS = 180
 DEFAULT_MAX_CONCURRENT_TASKS = 4
+
+
+class FollowUpPolicy(StrEnum):
+    """How the workflow decides whether to run its single follow-up search."""
+
+    EVIDENCE = "evidence"
+    AUTO = "auto"
+    HEURISTIC = "heuristic"
+    NEVER = "never"
 
 
 class ConfigError(ValueError):
@@ -55,14 +65,24 @@ def _describe_errors(exc: ValidationError) -> str:
 
 
 class WorkflowLimits(BaseModel):
-    """Bounded-workflow limits; enforced once the search loop exists."""
+    """Bounded-workflow limits and follow-up behavior."""
 
     model_config = ConfigDict(frozen=True)
 
-    max_rounds: int = Field(default=DEFAULT_MAX_ROUNDS, ge=1)
+    max_rounds: int = Field(default=DEFAULT_MAX_ROUNDS)
     upstream_timeout_seconds: int = Field(default=DEFAULT_UPSTREAM_TIMEOUT_SECONDS, ge=1)
     task_deadline_seconds: int = Field(default=DEFAULT_TASK_DEADLINE_SECONDS, ge=1)
     max_concurrent_tasks: int = Field(default=DEFAULT_MAX_CONCURRENT_TASKS, ge=1)
+    follow_up_policy: FollowUpPolicy = FollowUpPolicy.AUTO
+
+    @model_validator(mode="after")
+    def _rounds_allow_one_follow_up(self) -> Self:
+        if not 1 <= self.max_rounds <= 2:
+            raise ValueError(
+                "WORKFLOW_MAX_ROUNDS must be 1 or 2: one initial search "
+                "plus at most one follow-up"
+            )
+        return self
 
     @model_validator(mode="after")
     def _timeout_fits_deadline(self) -> Self:
@@ -113,6 +133,17 @@ class Settings(BaseModel):
             port if port is not None else _parse_int(source, "PORT", DEFAULT_PORT)
         )
         public_url = source.get("PUBLIC_URL") or f"http://{resolved_host}:{resolved_port}"
+        raw_policy = (source.get("WORKFLOW_FOLLOW_UP_POLICY") or "").strip()
+        follow_up_policy = FollowUpPolicy.AUTO
+        if raw_policy:
+            try:
+                follow_up_policy = FollowUpPolicy(raw_policy)
+            except ValueError as exc:
+                allowed = ", ".join(policy.value for policy in FollowUpPolicy)
+                raise ConfigError(
+                    "WORKFLOW_FOLLOW_UP_POLICY must be one of "
+                    f"{allowed}, got {raw_policy!r}"
+                ) from exc
         try:
             workflow = WorkflowLimits(
                 max_rounds=_parse_int(
@@ -133,6 +164,7 @@ class Settings(BaseModel):
                     "WORKFLOW_MAX_CONCURRENT_TASKS",
                     DEFAULT_MAX_CONCURRENT_TASKS,
                 ),
+                follow_up_policy=follow_up_policy,
             )
             return cls(
                 host=resolved_host,

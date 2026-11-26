@@ -5,7 +5,6 @@ import httpx
 import pytest
 
 from knowledge_agent.config import Settings
-from knowledge_agent.executor import SCAFFOLD_MESSAGE
 from knowledge_agent.server import create_app
 
 
@@ -63,23 +62,6 @@ async def test_health_reports_service_and_version(
 
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
-
-
-async def test_message_send_returns_scaffold_artifact(
-    client: httpx.AsyncClient,
-) -> None:
-    response = await client.post("/a2a", json=_message_send("hello"))
-
-    assert response.status_code == 200
-    body = response.json()
-    assert "error" not in body
-    task = body["result"]
-    assert task["kind"] == "task"
-    assert task["status"]["state"] == "completed"
-    texts = [
-        part["text"] for artifact in task["artifacts"] for part in artifact["parts"]
-    ]
-    assert texts == [SCAFFOLD_MESSAGE]
 
 
 async def test_unknown_method_returns_jsonrpc_error(
