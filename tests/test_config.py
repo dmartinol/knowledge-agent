@@ -20,6 +20,7 @@ def test_defaults() -> None:
     assert limits.upstream_timeout_seconds == 90
     assert limits.task_deadline_seconds == 180
     assert limits.max_concurrent_tasks == 4
+    assert settings.skills_dir == "skills"
     assert settings.llm.configured is False
     assert settings.llm.request_limit == 6
     assert settings.llm.total_tokens_limit == 60_000
@@ -84,6 +85,7 @@ def test_partial_model_configuration_is_rejected() -> None:
 def test_ambient_api_key_alone_does_not_break_configuration() -> None:
     settings = Settings.from_env({"OPENAI_API_KEY": "ambient-key"})
 
+    assert settings.skills_dir == "skills"
     assert settings.llm.configured is False
 
 
@@ -148,3 +150,14 @@ def test_upstream_timeout_above_deadline_is_rejected() -> None:
 def test_relative_lcore_url_is_rejected() -> None:
     with pytest.raises(ConfigError, match="LCORE_AGENT_CARD_URL"):
         Settings.from_env({"LCORE_AGENT_CARD_URL": "/agent-card.json"})
+
+
+def test_skills_directory_override() -> None:
+    settings = Settings.from_env({"AGENT_SKILLS_DIR": " /srv/skills "})
+
+    assert settings.skills_dir == "/srv/skills"
+
+
+def test_empty_skills_directory_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="AGENT_SKILLS_DIR"):
+        Settings.from_env({"AGENT_SKILLS_DIR": "   "})

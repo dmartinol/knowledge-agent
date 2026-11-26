@@ -504,7 +504,7 @@ async def test_retrieved_evidence_is_rendered_as_sources() -> None:
     }
     assert metadata["loop"] == "typed_tool"
     assert metadata["decision_source"] == "llm"
-    assert metadata["skills"] == []
+    assert "skills" not in metadata
 
 
 async def test_cited_only_evidence_is_labeled_unverified() -> None:
@@ -552,6 +552,24 @@ async def test_model_configuration_error_fails_task() -> None:
     assert task["metadata"]["knowledge_agent"]["error"] == (
         "model_config_error"
     )
+
+
+async def test_unusable_skills_fail_task(tmp_path) -> None:
+    fake = FakeSearchClient([_result()])
+    model = _model(_tool("OpenShift routes"), _answer())
+    settings = _settings(AGENT_SKILLS_DIR=str(tmp_path / "absent"))
+
+    async with _client(settings, fake, model) as client:
+        body = (
+            await client.post(
+                "/a2a", json=_payload("How do OpenShift routes work?")
+            )
+        ).json()
+
+    task = body["result"]
+    assert task["status"]["state"] == "failed"
+    assert task["metadata"]["knowledge_agent"]["error"] == "skills_unavailable"
+    assert fake.calls == []
 
 
 async def test_model_timeout_fails_task() -> None:

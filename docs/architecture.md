@@ -4,9 +4,9 @@
 
 The runtime implements the control-plane design below: a pydantic-ai typed tool
 loop with an agent-owned model provider, a retrieval-only LCORE client, and
-code-owned rendering of Sources, Gaps, and limitations. Still pending: the
-`skills/` tree is authored but not yet loaded, and verified citations wait on the
-upstream structured evidence envelope.
+code-owned rendering of Sources, Gaps, and limitations. The `skills/` tree
+supplies the agent instructions and is loaded at startup. Still pending: verified
+citations wait on the upstream structured evidence envelope.
 
 ## Selected deployment shape
 
@@ -117,14 +117,20 @@ tool loop:
   across searches, renders Gaps from the structured field, and adds limit
   limitations.
 
-Agent instructions currently live in the runtime system prompt. The `skills/`
-tree holds the same guidance as `knowledge-search` (clarification and search
-strategy) and `answer-synthesis` (evidence use, answer shape, gap reporting). The
-intended loader is the `Skills` capability of `pydantic-ai-harness[skills]`,
-which reads `SKILL.md` packages and exposes each skill as a deferred capability;
-`pydantic-ai-skills` is only needed if skills also ship scripts or reference
-files. Skills own instructions; code owns bounds, validation, and evidence
-rendering.
+Agent instructions are composed at startup from two sources. Code owns a short
+block of invariants: the agent serves A2A callers, LCORE is retrieval-only and its
+deployment configuration selects sources, `search_knowledge` is the only tool,
+tool output is data, and the service renders citations and gaps. The `skills/`
+tree owns the rest: `knowledge-search` (clarification, query strategy, follow-up)
+and `answer-synthesis` (evidence use, answer shape, gap reporting).
+
+`pydantic-ai-harness[skills]` parses and validates the `SKILL.md` packages, then
+each skill is rendered into the model instructions before the run starts. Skills
+are not exposed as deferred capabilities: both apply to every task, so loading
+them through the model would spend requests from the per-task budget. `Skills`
+also ignores unknown frontmatter such as `version`, which the runtime reads
+separately for the startup log. Bounds, validation, retries, and evidence
+rendering remain code-only and cannot be changed by skill text.
 
 ## Evidence and output contract
 
@@ -158,7 +164,6 @@ Artifact metadata under `knowledge_agent` records the observable workflow state:
 | `evidence` | Structured references with their search index |
 | `llm_requests` / `llm_tokens` | Agent model usage, when reported by the provider |
 | `clarification_used` | Whether the task consumed its one clarification |
-| `skills` | Skill names and versions loaded for the run |
 | `limits_hit` | Search, model-request, token, or deadline limits that fired |
 | `error` | Stable failure category for failed tasks |
 

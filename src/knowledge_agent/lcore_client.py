@@ -261,7 +261,11 @@ class LcoreClient:
 
         self._validate_card(card)
         logger.info(
-            "Discovered LCORE Agent Card: protocol=%s transport=%s",
+            "Discovered LCORE Agent Card: name=%s version=%s url=%s "
+            "protocol=%s transport=%s",
+            card.name,
+            card.version,
+            card.url,
             card.protocol_version,
             card.preferred_transport,
         )

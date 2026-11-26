@@ -30,6 +30,7 @@ from knowledge_agent.reasoning import (
     run_reasoning,
 )
 from knowledge_agent.render import render_answer
+from knowledge_agent.skills import SkillBundle, SkillError, load_skills
 
 logger = logging.getLogger(__name__)
 
@@ -79,11 +80,13 @@ class KnowledgeSearchExecutor(AgentExecutor):
         client: SearchClient,
         *,
         model: Model | None = None,
+        skills: SkillBundle | None = None,
         semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self._settings = settings
         self._client = client
         self._model = model
+        self._skills = skills
         self._semaphore = (
             semaphore
             if semaphore is not None
@@ -93,6 +96,13 @@ class KnowledgeSearchExecutor(AgentExecutor):
     @property
     def settings(self) -> Settings:
         return self._settings
+
+    async def _instructions(self) -> str:
+        bundle = self._skills
+        if bundle is None:
+            bundle = await load_skills(self._settings.skills_dir)
+            self._skills = bundle
+        return bundle.instructions
 
     async def execute(
         self, context: RequestContext, event_queue: EventQueue
@@ -136,12 +146,17 @@ class KnowledgeSearchExecutor(AgentExecutor):
         )
         acquired = False
         try:
+            instructions = await self._instructions()
             async with asyncio.timeout(limits.task_deadline_seconds):
                 await self._semaphore.acquire()
                 acquired = True
                 try:
                     outcome = await run_reasoning(
-                        self._settings, state, prompt, model=self._model
+                        self._settings,
+                        state,
+                        prompt,
+                        instructions=instructions,
+                        model=self._model,
                     )
                 finally:
                     self._semaphore.release()
@@ -154,6 +169,14 @@ class KnowledgeSearchExecutor(AgentExecutor):
                 DEADLINE_MESSAGE,
                 "deadline",
                 limits_hit=("deadline",),
+            )
+            return
+        except SkillError as exc:
+            logger.warning("Agent skills unavailable: %s", exc)
+            await self._fail(
+                updater,
+                GENERIC_ERROR_MESSAGE,
+                "skills_unavailable",
             )
             return
         except AgentError as exc:
@@ -200,8 +223,9 @@ class KnowledgeSearchExecutor(AgentExecutor):
             decision, state, requests=outcome.requests, tokens=outcome.tokens
         )
         logger.info(
-            "Knowledge search finished: searches=%d evidence_status=%s "
+            "Knowledge search finished: model=%s searches=%d evidence_status=%s "
             "requests=%d",
+            self._settings.llm.model,
             state.searches,
             rendered.metadata["evidence_status"],
             outcome.requests,

@@ -48,15 +48,17 @@ before depending on them. Status words are `Verified`, `Decided`, and `Open`.
 ## 4. Agent skills and prompt assets
 
 - Decided: instructions live in the agent's `skills/` tree and are loaded with
-  the `Skills` capability of `pydantic-ai-harness[skills]`. LCORE skills are out
-  of scope.
-- Decided: skills activation is deferred. The current runtime carries the same
-  guidance in a code-owned system prompt, and artifact metadata reports an empty
-  skill list until the capability is wired in.
-- Open: pin a compatible pydantic-ai and `pydantic-ai-harness` version pair and
-  verify progressive disclosure behavior in the service.
-- Open: skill ownership, review, and versioning. Artifact metadata should record
-  the skill names and versions used for a run.
+  the loader in `pydantic-ai-harness[skills]`. LCORE skills are out of scope.
+- Decided: skills are rendered into the model instructions at startup rather
+  than offered as deferred capabilities. Both skills apply to every task, and
+  `load_skill` would spend requests from the per-task model budget.
+- Resolved: the compatible pair is `pydantic-ai-slim==2.75.0` and
+  `pydantic-ai-harness==0.75.0`; the harness pins the exact slim version, so the
+  `<2.76` constraint keeps them aligned. Progressive disclosure is unused by
+  design, so its runtime behavior is not exercised.
+- Open: skill ownership and review. `SKILL.md` content is reviewed like code, and
+  the startup log records `name@version sha256=<prefix>` so a run is traceable to
+  exact file content without repeating it in every artifact.
 - Open: prompt-injection resistance for LCORE material. The current design wraps
   material as data and instructs the model to ignore embedded instructions; this
   needs adversarial tests.

@@ -28,6 +28,7 @@ DEFAULT_MAX_CONCURRENT_TASKS = 4
 DEFAULT_AGENT_LLM_TIMEOUT_SECONDS = 60
 DEFAULT_AGENT_LLM_REQUEST_LIMIT = 6
 DEFAULT_AGENT_LLM_TOTAL_TOKENS_LIMIT = 60_000
+DEFAULT_AGENT_SKILLS_DIR = "skills"
 
 
 class ConfigError(ValueError):
@@ -134,6 +135,7 @@ class Settings(BaseModel):
     port: int = Field(default=DEFAULT_PORT, ge=1, le=65535)
     public_url: str = ""
     lcore_agent_card_url: str = DEFAULT_LCORE_AGENT_CARD_URL
+    skills_dir: str = DEFAULT_AGENT_SKILLS_DIR
     workflow: WorkflowLimits = Field(default_factory=WorkflowLimits)
     llm: AgentModelSettings = Field(default_factory=AgentModelSettings)
 
@@ -146,6 +148,14 @@ class Settings(BaseModel):
     @classmethod
     def _validate_lcore_agent_card_url(cls, value: str) -> str:
         return _require_http_url(value, "LCORE_AGENT_CARD_URL")
+
+    @field_validator("skills_dir")
+    @classmethod
+    def _validate_skills_dir(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("AGENT_SKILLS_DIR must not be empty")
+        return cleaned
 
     @property
     def rpc_url(self) -> str:
@@ -239,6 +249,8 @@ class Settings(BaseModel):
                 public_url=public_url,
                 lcore_agent_card_url=source.get("LCORE_AGENT_CARD_URL")
                 or DEFAULT_LCORE_AGENT_CARD_URL,
+                skills_dir=source.get("AGENT_SKILLS_DIR")
+                or DEFAULT_AGENT_SKILLS_DIR,
                 workflow=workflow,
                 llm=llm,
             )

@@ -75,7 +75,6 @@ def render_answer(
         "llm_requests": requests,
         "llm_tokens": tokens,
         "clarification_used": state.clarification_used,
-        "skills": [],
         "limits_hit": limits_hit,
     }
     return RenderedAnswer(

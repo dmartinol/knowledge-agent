@@ -20,6 +20,7 @@ from knowledge_agent.config import Settings
 from knowledge_agent.executor import KnowledgeSearchExecutor
 from knowledge_agent.lcore_client import LcoreClient
 from knowledge_agent.loop import SearchClient
+from knowledge_agent.skills import SkillBundle
 
 RPC_PATH = "/a2a"
 HEALTH_PATH = "/a2a/health"
@@ -46,6 +47,7 @@ def create_app(
     *,
     search_client: SearchClient | None = None,
     model: Model | None = None,
+    skills: SkillBundle | None = None,
 ) -> FastAPI:
     card = build_agent_card(settings)
     owned_client: LcoreClient | None = None
@@ -57,7 +59,9 @@ def create_app(
         client = search_client
 
     handler = DefaultRequestHandler(
-        agent_executor=KnowledgeSearchExecutor(settings, client, model=model),
+        agent_executor=KnowledgeSearchExecutor(
+            settings, client, model=model, skills=skills
+        ),
         task_store=InMemoryTaskStore(),
     )
     sdk_app = A2AStarletteApplication(

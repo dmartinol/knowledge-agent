@@ -9,9 +9,9 @@ LCORE executes retrieval against administrator-configured OKP and BYOK sources.
 
 The runtime implements the pydantic-ai typed tool loop described here: the model
 decides clarification, searches, and follow-ups, while LCORE is retrieval-only.
-Two pieces of the target foundation are still pending: the `skills/` tree is
-authored but not yet loaded into the agent, and verified citations depend on the
-upstream structured evidence envelope.
+The `skills/` tree is loaded at startup and supplies the agent's instructions.
+One piece of the target foundation is still pending: verified citations depend on
+the upstream structured evidence envelope.
 
 ## Architecture
 
@@ -62,11 +62,27 @@ a typed tool loop:
   the reasoning model is unavailable or returns unusable output, the task fails
   with a stable error.
 
-Agent instructions currently live in `knowledge_agent.reasoning.SYSTEM_PROMPT`.
-The `skills/` tree already holds `knowledge-search` (clarification and search
-strategy) and `answer-synthesis` (evidence use, answer shape, gap reporting);
-loading them through the `Skills` capability of `pydantic-ai-harness` is the next
-step.
+## Skills
+
+`skills/knowledge-search` (clarification and search strategy) and
+`skills/answer-synthesis` (evidence use, answer shape, gap reporting) hold the
+agent instructions. They are parsed at startup with `pydantic-ai-harness`, then
+rendered into the model instructions after a short block of code-owned
+invariants: LCORE is retrieval-only, `search_knowledge` is the only tool, and the
+service renders citations and gaps.
+
+Skills are loaded once, not offered as deferred capabilities: both apply to every
+task, and loading them through the model would spend model requests from the
+per-task budget. Bounds, output validation, and evidence rendering stay in code
+and cannot be changed by skill text.
+
+Startup logs the model, the provider endpoint, the LCORE Agent Card URL, and each
+skill as `name@version sha256=<prefix>`, so a run's instructions are traceable to
+exact file content. Artifact metadata does not repeat the skill list.
+
+The `skills/` tree is not packaged into the wheel. A container deployment must
+mount it and point `AGENT_SKILLS_DIR` at the mount; the service refuses to start
+when the directory is missing or a skill is unusable.
 
 ## LCORE client
 
@@ -124,6 +140,7 @@ with an explicit message.
 | `AGENT_LLM_TIMEOUT_SECONDS` | `60` | Per-request agent model timeout |
 | `AGENT_LLM_REQUEST_LIMIT` | `6` | Maximum model requests per task |
 | `AGENT_LLM_TOTAL_TOKENS_LIMIT` | `60000` | Maximum agent model tokens per task |
+| `AGENT_SKILLS_DIR` | `skills` | Directory holding the `SKILL.md` packages the agent loads at startup |
 | `WORKFLOW_MAX_ROUNDS` | `2` | Maximum LCORE searches: `1` disables the follow-up |
 | `WORKFLOW_MAX_MATERIAL_CHARS` | `12000` | Maximum LCORE characters given to the model per search |
 | `WORKFLOW_UPSTREAM_TIMEOUT_SECONDS` | `90` | Per-call timeout for LCORE A2A requests |

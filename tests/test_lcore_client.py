@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -158,6 +159,22 @@ async def test_search_discovers_card_and_sends_no_metadata(
     encoded = json.dumps(body)
     for banned in ("model", "provider", "vector_store_ids"):
         assert banned not in encoded
+
+
+async def test_card_discovery_logs_the_reference_used(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake = FakeLcore()
+    transport = httpx.MockTransport(fake.handler)
+
+    with caplog.at_level(logging.INFO, logger="knowledge_agent.lcore_client"):
+        async with httpx.AsyncClient(transport=transport) as http:
+            await LcoreClient(settings, httpx_client=http).search("what is a pod?")
+
+    text = caplog.text
+    assert "name=Test LCORE" in text
+    assert "version=0.1.0" in text
+    assert "url=http://lcore.test/a2a" in text
 
 
 async def test_each_search_starts_a_fresh_context(

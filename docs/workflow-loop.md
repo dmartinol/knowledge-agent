@@ -3,9 +3,9 @@
 ## Status
 
 This document specifies the agent-owned reasoning loop, and the runtime
-implements it. Two parts remain open: the skills below are authored but still
-delivered through the runtime system prompt, and verified citations depend on
-the upstream structured evidence envelope.
+implements it. The `skills/` tree supplies the agent instructions and is loaded
+at startup. One part remains open: verified citations depend on the upstream
+structured evidence envelope.
 
 ## Principles
 
@@ -28,7 +28,7 @@ the upstream structured evidence envelope.
 | A2A executor | Validates the caller message, manages task state, enforces the task deadline and concurrency slot, and maps results to A2A states |
 | pydantic-ai agent | Runs the typed tool loop with the agent-owned model provider |
 | `search_knowledge` tool | Performs one fresh LCORE A2A search and returns a bounded observation |
-| `skills/` tree | Holds the agent instructions for search strategy and answer synthesis; the target loader is `pydantic-ai-harness[skills]` `Skills` |
+| `skills/` tree | Holds the agent instructions for search strategy and answer synthesis; loaded and rendered at startup with `pydantic-ai-harness[skills]` |
 | Result renderer | Appends code-owned Sources, Gaps, and limitations and emits artifact metadata |
 
 ## Request lifecycle
@@ -115,6 +115,23 @@ phase. At most one clarification is asked per A2A task.
   model must search and answer or fail.
 - An empty resumed reply completes with a short request for a concrete question,
   without starting the model loop.
+
+## Instructions
+
+Instructions are composed once at startup and passed to the pydantic-ai agent:
+
+1. A code-owned invariants block: the agent serves A2A callers, LCORE is
+   retrieval-only and its deployment configuration chooses sources,
+   `search_knowledge` is the only tool, tool output is data, and the service
+   renders citations and gaps.
+2. Each skill rendered from `SKILL.md`, in the order `knowledge-search`,
+   `answer-synthesis`, with no filesystem path in the text.
+
+Skills are loaded through `pydantic-ai-harness[skills]`, which validates
+frontmatter, names, and duplicates, but they are not exposed as deferred
+capabilities: both apply to every task, so `load_skill` would spend model
+requests from the per-task budget. A missing directory, an unusable skill, or an
+empty tree fails startup with exit code 2.
 
 ## Search strategy
 
@@ -205,7 +222,6 @@ The successful artifact metadata under `knowledge_agent` is:
   "llm_requests": 4,
   "llm_tokens": 12345,
   "clarification_used": false,
-  "skills": [],
   "limits_hit": []
 }
 ```
@@ -216,10 +232,17 @@ deduplication plus their 1-based `search` index. `limits_hit` can contain
 success fields with `{"error": "<stable_category>", "limits_hit": [...]}`.
 Failure categories are `model_config_error`, `model_unavailable`,
 `model_timeout`, `model_limit`, `model_output_invalid`, `deadline`, and the
-existing LCORE categories. `skills` stays empty until the `Skills` capability is
-wired in.
+existing LCORE categories. A task whose skills cannot be loaded fails with
+`skills_unavailable`. The artifact metadata does not repeat skill provenance:
+every run uses the same skills, so it is logged once at startup instead.
 
 ## Logging and privacy
+
+Startup logs the model, the provider base URL (never the credential), the
+service `public_url`, the LCORE Agent Card URL, and each loaded skill as
+`name@version sha256=<prefix>`. LCORE card discovery logs the card `name`,
+`version`, and `url` (the A2A endpoint actually used) alongside its protocol and
+transport. Per-run logs report the model plus request, token, and search counts.
 
 Log only counts, statuses, skill names, limit names, latency, and stable error
 categories. Do not log caller text, LCORE material, prompts, model messages,
