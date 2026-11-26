@@ -7,6 +7,7 @@ import asyncio
 import logging
 import sys
 
+import pydantic_ai
 import uvicorn
 
 from knowledge_agent.config import ConfigError, Settings
@@ -48,6 +49,7 @@ def _log_startup(settings: Settings, skills: SkillBundle) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    pydantic_ai.BANNER_ENABLED = False
     logging.basicConfig(
         level=logging.INFO,
         format="%(levelname)s %(name)s: %(message)s",

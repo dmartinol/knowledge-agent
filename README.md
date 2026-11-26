@@ -121,7 +121,9 @@ uv run pyright
 
 The service publishes its Agent Card at `/.well-known/agent-card.json` and speaks
 A2A JSON-RPC `POST /a2a`. Streaming is advertised as unsupported; the workflow
-answers with a single text artifact plus workflow metadata.
+answers with a single text artifact plus workflow metadata. Repeatable local
+checks, including the A2A Inspector and the expected failure modes, are in
+`docs/local-interop-validation.md`.
 
 ## Configuration
 
