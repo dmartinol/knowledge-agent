@@ -2,6 +2,7 @@ name: Lightspeed Core Service (LCS)
 service:
   host: 0.0.0.0
   port: 8080
+  base_url: http://localhost:8080
   auth_enabled: false
   workers: 1
   color_log: true
@@ -27,9 +28,12 @@ inference:
   providers:
     - type: openai
       id: openai
-      api_key_env: ENMAAS_KEY
+      # LCORE model discovery reads `config`; the OGX run.yaml it synthesizes
+      # ignores `config` and needs `api_key_env` plus `extra.base_url`.
       config:
+        api_key: ${env.OPENAI_API_KEY}
         base_url: ${env.OPENAI_BASE_URL}
+      api_key_env: OPENAI_API_KEY
       extra:
         base_url: ${env.OPENAI_BASE_URL}
       allowed_models:

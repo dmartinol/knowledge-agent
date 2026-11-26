@@ -9,7 +9,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any, Literal
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 from uuid import uuid4
 
 import httpx
@@ -46,6 +46,9 @@ SUPPORTED_PROTOCOL_PREFIX = "0.3."
 EVIDENCE_ENVELOPE_KEY = "evidence"
 EVIDENCE_DOCUMENT_KEYS = ("referenced_documents",)
 EVIDENCE_CHUNK_KEYS = ("rag_chunks",)
+LOOPBACK_HOSTS: frozenset[str] = frozenset(
+    {"localhost", "0.0.0.0", "127.0.0.1", "::1"}
+)
 
 EvidenceKind = Literal["document", "chunk"]
 SupportKind = Literal["retrieved", "cited"]
@@ -260,6 +263,7 @@ class LcoreClient:
             ) from exc
 
         self._validate_card(card)
+        card = self._reachable_card(card)
         logger.info(
             "Discovered LCORE Agent Card: name=%s version=%s url=%s "
             "protocol=%s transport=%s",
@@ -289,6 +293,51 @@ class LcoreClient:
                 LcoreErrorKind.INVALID_RESPONSE,
                 "LCORE Agent Card has an invalid JSON-RPC URL",
             )
+
+    def _reachable_card(self, card: AgentCard) -> AgentCard:
+        """Point loopback card endpoints at the configured card host.
+
+        A2A servers commonly publish their bind address (``localhost`` or
+        ``0.0.0.0``) in the Agent Card. That address is not reachable from
+        another pod, so the scheme, host, and port of the configured card URL
+        are substituted while every advertised path is preserved.
+        """
+        card_url = self._settings.lcore_agent_card_url
+        url = _peer_endpoint(card.url, card_url)
+        interfaces = [
+            replace(interface, url=_peer_endpoint(interface.url, card_url))
+            if interface.url
+            else interface
+            for interface in card.additional_interfaces or []
+        ]
+        if url == card.url and interfaces == list(card.additional_interfaces or []):
+            return card
+        logger.info(
+            "Rewrote loopback LCORE endpoint url=%s to url=%s", card.url, url
+        )
+        return card.model_copy(
+            update={"url": url, "additional_interfaces": interfaces}
+        )
+
+
+def _peer_endpoint(advertised: str, card_url: str) -> str:
+    """Return an advertised endpoint reached through the configured host.
+
+    Only loopback and unspecified addresses are rewritten, because they are
+    unreachable from another pod. Anything else is returned untouched.
+    """
+    advertised_parts = urlparse(advertised)
+    if advertised_parts.hostname not in LOOPBACK_HOSTS:
+        return advertised
+    config_parts = urlparse(card_url)
+    if not config_parts.netloc:
+        return advertised
+    return urlunparse(
+        advertised_parts._replace(
+            scheme=config_parts.scheme or advertised_parts.scheme,
+            netloc=config_parts.netloc,
+        )
+    )
 
 
 def _advertises_jsonrpc(card: AgentCard) -> bool:

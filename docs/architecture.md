@@ -98,6 +98,10 @@ service as an agent-owned reasoning agent backed by an LCORE knowledge service.
 - Normalize completed text, structured references, evidence state, and stable
   error categories. Do not expose LCORE task IDs, tool calls, or raw history to
   the agent model.
+- Call the endpoint the card advertises, but treat a loopback or unspecified
+  host as a bind address: substitute the scheme, host, and port of
+  `LCORE_AGENT_CARD_URL` and keep the advertised path. A peer that publishes
+  `localhost` would otherwise fail every search as an unreachable endpoint.
 
 ## Agent reasoning loop
 
@@ -162,6 +166,8 @@ Artifact metadata under `knowledge_agent` records the observable workflow state:
 | `searches` / `search_limit` | LCORE searches performed and the hard cap |
 | `evidence_status` | `available`, `none`, `unavailable`, or `not_configured` |
 | `evidence` | Structured references with their search index |
+| `gaps` | Code-owned gap list, including the search-limit gap |
+| `limitation` | The unverified limitation, or `null` when references exist |
 | `llm_requests` / `llm_tokens` | Agent model usage, when reported by the provider |
 | `clarification_used` | Whether the task consumed its one clarification |
 | `limits_hit` | Search, model-request, token, or deadline limits that fired |
@@ -201,7 +207,7 @@ The agent model is configured through `AGENT_LLM_BASE_URL`,
 `AGENT_LLM_MODEL`, `AGENT_LLM_API_KEY`, `AGENT_LLM_TIMEOUT_SECONDS`,
 `AGENT_LLM_REQUEST_LIMIT`, and `AGENT_LLM_TOTAL_TOKENS_LIMIT`. Local runs may
 fall back to `OPENAI_BASE_URL`, `E2E_OPENAI_MODEL`, and
-`ENMAAS_KEY`/`OPENAI_API_KEY`. All three model values must resolve together;
+`OPENAI_API_KEY`. All three model values must resolve together;
 the service exits at startup when they do not. The LCORE URL and workflow limits
 keep their existing configuration names, and
 `WORKFLOW_MAX_MATERIAL_CHARS` bounds the material handed to the model.

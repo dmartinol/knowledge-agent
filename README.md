@@ -125,6 +125,14 @@ answers with a single text artifact plus workflow metadata. Repeatable local
 checks, including the A2A Inspector and the expected failure modes, are in
 `docs/local-interop-validation.md`.
 
+## Demo console and OpenShift deployment
+
+`demo/` holds a self-contained demo: a PatternFly console that drives the agent
+over A2A and shows workflow state, evidence, and the raw exchange, plus a Helm
+chart that deploys the agent, the console, and an in-cluster LCORE retrieval
+service on OpenShift. See [the demo guide](demo/README.md) for image builds,
+secret configuration, install, verification, and troubleshooting.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and adjust. Everything comes from the environment;
@@ -138,7 +146,7 @@ with an explicit message.
 | `PUBLIC_URL` | `http://$HOST:$PORT` | Base URL advertised in the Agent Card |
 | `AGENT_LLM_BASE_URL` | fallback to `OPENAI_BASE_URL` | OpenAI-compatible agent model endpoint |
 | `AGENT_LLM_MODEL` | fallback to `E2E_OPENAI_MODEL` | Agent reasoning model |
-| `AGENT_LLM_API_KEY` | fallback to `ENMAAS_KEY` or `OPENAI_API_KEY` | Agent model credential |
+| `AGENT_LLM_API_KEY` | fallback to `OPENAI_API_KEY` | Agent model credential |
 | `AGENT_LLM_TIMEOUT_SECONDS` | `60` | Per-request agent model timeout |
 | `AGENT_LLM_REQUEST_LIMIT` | `6` | Maximum model requests per task |
 | `AGENT_LLM_TOTAL_TOKENS_LIMIT` | `60000` | Maximum agent model tokens per task |

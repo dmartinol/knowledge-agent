@@ -62,6 +62,7 @@ def render_answer(
     else:
         sections.append(f"Limitation: {UNVERIFIED_LIMITATION}")
 
+    limitation = None if evidence else UNVERIFIED_LIMITATION
     metadata: dict[str, object] = {
         "loop": "typed_tool",
         "decision_source": "llm",
@@ -72,6 +73,8 @@ def render_answer(
             {"search": index, **_reference_metadata(reference)}
             for index, reference in evidence
         ],
+        "gaps": gaps,
+        "limitation": limitation,
         "llm_requests": requests,
         "llm_tokens": tokens,
         "clarification_used": state.clarification_used,

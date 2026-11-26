@@ -1,0 +1,157 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $dns := dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" "openshift-dns")) }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "knowledge-agent.agent.name" . }}
+  labels:
+    {{- include "knowledge-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "knowledge-agent.agent.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # The OpenShift router and the console are the only callers.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressNamespaceSelector | nindent 14 }}
+        {{- if .Values.ui.enabled }}
+        - podSelector:
+            matchLabels:
+              {{- include "knowledge-agent.ui.selectorLabels" . | nindent 14 }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.agent.port }}
+  egress:
+    - to:
+        - {{- toYaml $dns | nindent 10 }}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- if .Values.lcore.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "knowledge-agent.lcore.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.lcore.port }}
+    {{- end }}
+    {{- if .Values.networkPolicy.externalEgress.enabled }}
+    {{- if .Values.networkPolicy.externalEgress.cidrs }}
+    - to:
+        {{- range .Values.networkPolicy.externalEgress.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+    {{- else }}
+    - {}
+    {{- end }}
+    {{- end }}
+---
+{{- if .Values.ui.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "knowledge-agent.ui.name" . }}
+  labels:
+    {{- include "knowledge-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ui
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "knowledge-agent.ui.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressNamespaceSelector | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.ui.port }}
+  egress:
+    - to:
+        - {{- toYaml $dns | nindent 10 }}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # The console proxies A2A to the agent and has no path to LCORE.
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "knowledge-agent.agent.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.agent.port }}
+    {{- if .Values.networkPolicy.uiAllowAnyEgress }}
+    - {}
+    {{- end }}
+---
+{{- end }}
+{{- if .Values.lcore.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "knowledge-agent.lcore.name" . }}
+  labels:
+    {{- include "knowledge-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: lcore
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "knowledge-agent.lcore.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only the agent may reach the retrieval service.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "knowledge-agent.agent.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.lcore.port }}
+  egress:
+    - to:
+        - {{- toYaml $dns | nindent 10 }}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- with .Values.networkPolicy.rhokpNamespace }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . | quote }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- end }}
+    {{- if .Values.networkPolicy.externalEgress.enabled }}
+    {{- if .Values.networkPolicy.externalEgress.cidrs }}
+    - to:
+        {{- range .Values.networkPolicy.externalEgress.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+    {{- else }}
+    - {}
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}

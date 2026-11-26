@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "knowledge-agent.agent.name" . }}
+  labels:
+    {{- include "knowledge-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "knowledge-agent.agent.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.agent.port }}
+      targetPort: http
+      protocol: TCP

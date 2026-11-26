@@ -1,0 +1,40 @@
+# Build from the repository root: podman build -f demo/agent/Containerfile .
+# The skills tree is baked in, so AGENT_SKILLS_DIR never depends on a mount.
+FROM python:3.12.7-slim AS builder
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+RUN pip install --no-cache-dir uv==0.5.11
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY README.md ./
+COPY src ./src
+RUN uv sync --frozen --no-dev
+
+
+FROM python:3.12.7-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH=/app/.venv/bin:$PATH \
+    HOST=0.0.0.0 \
+    PORT=8081 \
+    AGENT_SKILLS_DIR=/app/skills
+
+WORKDIR /app
+
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/src /app/src
+COPY skills /app/skills
+
+EXPOSE 8081
+
+# Arbitrary UID safe: the process owns nothing writable and needs no home.
+USER 1001
+
+CMD ["knowledge-agent"]

@@ -1,0 +1,144 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  # In-cluster registry used when a component leaves its repository empty.
+  internalRegistry: image-registry.openshift-image-registry.svc:5000
+
+agent:
+  image:
+    # Empty pulls <internalRegistry>/<namespace>/<stream>. Set a full
+    # repository (without tag) to use an external registry instead.
+    repository: ""
+    stream: knowledge-agent-demo
+    tag: latest
+    pullPolicy: Always
+  port: 8081
+  skillsDir: /app/skills
+  # Set this when the Route host is known so the published Agent Card carries
+  # the external URL. When empty, the card advertises http://0.0.0.0:8081.
+  publicUrl: ""
+  route:
+    enabled: true
+    host: ""
+    # Must exceed the longest blocking A2A call the route carries.
+    timeout: 240s
+    tls:
+      termination: edge
+      insecureEdgeTerminationPolicy: Redirect
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  llm:
+    # Required. OpenAI-compatible endpoint and model owned by the agent.
+    baseUrl: ""
+    model: ""
+    timeoutSeconds: 60
+    requestLimit: 6
+    totalTokensLimit: 60000
+  workflow:
+    maxRounds: 2
+    maxMaterialChars: 12000
+    upstreamTimeoutSeconds: 90
+    taskDeadlineSeconds: 180
+    maxConcurrentTasks: 4
+  probes:
+    readiness:
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      failureThreshold: 3
+    liveness:
+      initialDelaySeconds: 30
+      periodSeconds: 20
+      failureThreshold: 3
+
+ui:
+  enabled: true
+  image:
+    repository: ""
+    stream: knowledge-agent-demo-ui
+    tag: latest
+    pullPolicy: Always
+  port: 8080
+  route:
+    enabled: true
+    host: ""
+    # Must exceed the longest blocking A2A call the route carries.
+    timeout: 240s
+    tls:
+      termination: edge
+      insecureEdgeTerminationPolicy: Redirect
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+lcore:
+  enabled: true
+  # Used when enabled=false: base URL of an LCORE deployment you manage.
+  externalUrl: ""
+  image:
+    repository: quay.io/lightspeed-core/lightspeed-stack
+    tag: dev-20261126-ab82ea4
+    pullPolicy: IfNotPresent
+  port: 8080
+  # URL published in the LCORE Agent Card. Empty means the in-cluster Service.
+  serviceBaseUrl: ""
+  inference:
+    defaultModel: rits/zai-org/glm-5-3
+    # Empty means "allow only defaultModel".
+    allowedModels: []
+    # Environment variables the LCORE container reads for the provider.
+    apiKeyEnv: OPENAI_API_KEY
+    baseUrlEnv: OPENAI_BASE_URL
+  rag:
+    sources:
+      - okp
+    maxChunks: 5
+    searchMode: keyword
+    offline: true
+  agentCard:
+    name: Lightspeed Assistant
+    description: Answers questions using Red Hat knowledge sources.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+secrets:
+  # Name of an existing Secret. The chart never renders secret material.
+  existingSecret: ""
+  keys:
+    agentApiKey: AGENT_LLM_API_KEY
+    lcoreApiKey: OPENAI_API_KEY
+    lcoreBaseUrl: OPENAI_BASE_URL
+    rhokpUrl: RH_SERVER_OKP
+
+networkPolicy:
+  enabled: true
+  # Namespace that hosts the OpenShift ingress router.
+  ingressNamespaceSelector:
+    network.openshift.io/policy-group: ingress
+  # RHOKP namespace for LCORE egress. Only used when lcore.enabled is true.
+  rhokpNamespace: rhokp
+  # Some clusters re-originate DNS queries leaving an egress-isolated pod, so
+  # port-53 rules never match and only an unrestricted egress rule works. Set
+  # this to true on such clusters; the console then keeps working but its
+  # egress is no longer scoped to the agent.
+  uiAllowAnyEgress: false
+  externalEgress:
+    # The model provider and (when enabled) RHOKP are reachable through this
+    # policy. Empty cidrs allow every egress destination on every port; list
+    # CIDRs to narrow it to the model endpoint networks.
+    enabled: true
+    cidrs: []

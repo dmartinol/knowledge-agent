@@ -1,0 +1,97 @@
+{{- if .Values.lcore.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "knowledge-agent.lcore.name" . }}
+  labels:
+    {{- include "knowledge-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: lcore
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "knowledge-agent.lcore.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "knowledge-agent.lcore.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/lcore-configmap.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: lcore
+          image: {{ include "knowledge-agent.lcore.image" . }}
+          imagePullPolicy: {{ .Values.lcore.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - mkdir -p /tmp/data && exec /app-root/entrypoint.sh
+          ports:
+            - name: http
+              containerPort: {{ .Values.lcore.port }}
+              protocol: TCP
+          env:
+            - name: HOME
+              value: /tmp
+            - name: OTEL_SDK_DISABLED
+              value: "true"
+            - name: {{ .Values.lcore.inference.apiKeyEnv }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "knowledge-agent.secretName" . }}
+                  key: {{ .Values.secrets.keys.lcoreApiKey }}
+            - name: {{ .Values.lcore.inference.baseUrlEnv }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "knowledge-agent.secretName" . }}
+                  key: {{ .Values.secrets.keys.lcoreBaseUrl }}
+            - name: RH_SERVER_OKP
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "knowledge-agent.secretName" . }}
+                  key: {{ .Values.secrets.keys.rhokpUrl }}
+          # TCP probes: LCORE and the in-process OGX client need a long start.
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.lcore.resources | nindent 12 }}
+          securityContext:
+            {{- include "knowledge-agent.securityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app-root/lightspeed-stack.yaml
+              subPath: lightspeed-stack.yaml
+              readOnly: true
+            - name: data
+              mountPath: /tmp/data
+            # Library-mode OGX synthesizes its config relative to the working
+            # directory, which is read-only inside the image.
+            - name: generated
+              mountPath: /app-root/.generated
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "knowledge-agent.lcore.name" . }}
+        - name: data
+          emptyDir: {}
+        - name: generated
+          emptyDir: {}
+{{- end }}

@@ -1,0 +1,32 @@
+Knowledge Search Agent demo installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+{{- if .Values.ui.enabled }}
+Console:
+{{- if .Values.ui.route.enabled }}
+  https://{{ .Values.ui.route.host | default (printf "<route-host>" ) }}
+  Find the generated host with:
+    oc get route {{ include "knowledge-agent.ui.name" . }} -n {{ .Release.Namespace }} -o jsonpath='{.spec.host}'
+{{- else }}
+  oc port-forward svc/{{ include "knowledge-agent.ui.name" . }} 8080:{{ .Values.ui.port }} -n {{ .Release.Namespace }}
+{{- end }}
+{{- end }}
+
+{{- if .Values.agent.route.enabled }}
+Agent A2A endpoint (for the Inspector):
+  https://{{ .Values.agent.route.host | default "<route-host>" }}/a2a
+  Card:  https://{{ .Values.agent.route.host | default "<route-host>" }}/.well-known/agent-card.json
+{{- end }}
+
+{{- if not .Values.agent.publicUrl }}
+The Agent Card currently advertises the in-pod bind address. To publish the
+external URL, set agent.publicUrl (and optionally agent.route.host) and upgrade:
+  AGENT_HOST=$(oc get route {{ include "knowledge-agent.agent.name" . }} -n {{ .Release.Namespace }} -o jsonpath='{.spec.host}')
+  helm upgrade {{ .Release.Name }} <chart> --reuse-values \
+    --set agent.route.host="$AGENT_HOST" --set agent.publicUrl="https://$AGENT_HOST"
+{{- end }}
+
+{{- if .Values.lcore.enabled }}
+LCORE runs in-cluster as {{ include "knowledge-agent.lcore.name" . }}:{{ .Values.lcore.port }}.
+{{- else }}
+LCORE is external: {{ .Values.lcore.externalUrl }}
+{{- end }}

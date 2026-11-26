@@ -1,0 +1,14 @@
+{{- if .Values.ui.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "knowledge-agent.ui.name" . }}
+  labels:
+    {{- include "knowledge-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ui
+data:
+  HOST: "0.0.0.0"
+  PORT: {{ .Values.ui.port | quote }}
+  NODE_ENV: production
+  AGENT_INTERNAL_URL: {{ printf "http://%s:%v" (include "knowledge-agent.agent.name" .) .Values.agent.port | quote }}
+{{- end }}
