@@ -225,6 +225,8 @@ class KnowledgeSearchExecutor(AgentExecutor):
             requests=outcome.requests,
             tokens=outcome.tokens,
             retriever=self._settings.retriever.value,
+            source_base_internal=self._settings.source_base_internal,
+            source_base_public=self._settings.source_base_public,
         )
         logger.info(
             "Knowledge search finished: model=%s retriever=%s searches=%d "

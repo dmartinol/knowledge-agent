@@ -23,6 +23,12 @@ data:
   WORKFLOW_UPSTREAM_TIMEOUT_SECONDS: {{ .Values.agent.workflow.upstreamTimeoutSeconds | quote }}
   WORKFLOW_TASK_DEADLINE_SECONDS: {{ .Values.agent.workflow.taskDeadlineSeconds | quote }}
   WORKFLOW_MAX_CONCURRENT_TASKS: {{ .Values.agent.workflow.maxConcurrentTasks | quote }}
+  {{- with .Values.rhokp.internalUrl }}
+  SOURCE_BASE_INTERNAL_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.rhokp.publicUrl }}
+  SOURCE_BASE_PUBLIC_URL: {{ . | quote }}
+  {{- end }}
   {{- with include "knowledge-agent.agent.publicUrl" . }}
   PUBLIC_URL: {{ . | quote }}
   {{- end }}

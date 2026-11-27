@@ -145,6 +145,10 @@ code:
 - Code appends Sources from the deduplicated union of structured references
   across searches, renders Gaps from the structured field, and adds limit
   limitations.
+- Deployment configuration may supply an internal and a public base for Source
+  URLs. When both are set, the rendered artifact rebases URLs that start with
+  the internal base onto the public one and keeps LCORE's value as
+  `upstream_url`; the references the model sees are untouched.
 
 Agent instructions are composed at startup from two sources. Code owns a short
 block of invariants: the agent serves A2A callers, LCORE is retrieval-only and its

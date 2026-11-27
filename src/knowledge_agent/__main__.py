@@ -47,6 +47,12 @@ def _log_startup(settings: Settings, skills: SkillBundle) -> None:
         settings.lcore_agent_card_url,
         settings.lcore_rest_url,
     )
+    logger.info(
+        "Source URLs: rewrite=%s internal=%s public=%s",
+        "on" if settings.source_base_public else "off",
+        settings.source_base_internal or "-",
+        settings.source_base_public or "-",
+    )
     logger.info("Skills loaded from %s: %s", settings.skills_dir, skills.summary)
 
 

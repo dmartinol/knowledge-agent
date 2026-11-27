@@ -119,13 +119,14 @@ lcore:
       memory: 2Gi
 
 rhokp:
-  # Public base URL of RHOKP, normally its Route, e.g.
-  # https://rhokp-rhokp.apps.<cluster-domain>. LCORE uses this single base both
-  # for the MCP transport and for the document URLs it returns, so setting it
-  # makes Sources openable from outside the cluster. Empty keeps the URL from
-  # the Secret, which points at the in-cluster Service and yields
-  # cluster-internal links. LCORE must be able to resolve the host and reach the
-  # ingress router; a narrowed networkPolicy.externalEgress must include it.
+  # Base URL LCORE uses to reach RHOKP. LCORE also builds the document URLs in
+  # its citations from this value, so point it at whatever LCORE can reach.
+  internalUrl: "http://rhokp.rhokp.svc.cluster.local:8080"
+  # Public base for the same documents, normally RHOKP's Route, e.g.
+  # https://rhokp-rhokp.apps.<cluster-domain>. When set, the agent rewrites
+  # Source URLs that start with internalUrl so callers can open them. Empty
+  # leaves LCORE's URLs untouched. Only the two strings are compared: the agent
+  # never resolves or discovers the Route itself.
   publicUrl: ""
 
 secrets:
@@ -135,7 +136,6 @@ secrets:
     agentApiKey: AGENT_LLM_API_KEY
     lcoreApiKey: OPENAI_API_KEY
     lcoreBaseUrl: OPENAI_BASE_URL
-    rhokpUrl: RH_SERVER_OKP
 
 networkPolicy:
   enabled: true

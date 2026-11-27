@@ -8,7 +8,9 @@ from knowledge_agent.reasoning import KnowledgeAnswer
 from knowledge_agent.render import (
     SEARCH_LIMIT_GAP,
     UNVERIFIED_LIMITATION,
+    SourceBases,
     clean_text,
+    rebase_source_url,
     render_answer,
 )
 
@@ -137,3 +139,108 @@ def test_clean_text_strips_markers_and_answer_labels() -> None:
     text = "Answer: A pod <|/documentation/pods|>is the smallest unit.\n\n\n\nNext."
 
     assert clean_text(text) == "A pod is the smallest unit.\n\nNext."
+
+
+INTERNAL = "http://rhokp.rhokp.svc.cluster.local:8080"
+PUBLIC = "https://rhokp-rhokp.apps.example.com"
+
+
+def _internal_document(document_id: str, path: str) -> LcoreEvidence:
+    return LcoreEvidence(
+        kind="document",
+        source="okp",
+        document_id=document_id,
+        title="Doc",
+        url=f"{INTERNAL}{path}",
+        support="retrieved",  # type: ignore[arg-type]
+    )
+
+
+def test_source_urls_are_rebased_to_the_public_base() -> None:
+    state = _state(
+        _result(
+            _internal_document(
+                "doc-1",
+                "/en/documentation/node.js/24/html-single/guide/index?a=1#top",
+            )
+        )
+    )
+
+    rendered = render_answer(
+        KnowledgeAnswer(answer="Answer."),
+        state,
+        requests=2,
+        tokens=10,
+        retriever="rest",
+        source_base_internal=INTERNAL,
+        source_base_public=PUBLIC,
+    )
+
+    public_url = (
+        f"{PUBLIC}/en/documentation/node.js/24/html-single/guide/index?a=1#top"
+    )
+    assert f"- Doc — {public_url}" in rendered.text
+    entries = cast(list[dict[str, Any]], rendered.metadata["evidence"])
+    assert entries[0]["url"] == public_url
+    assert entries[0]["upstream_url"] == (
+        f"{INTERNAL}/en/documentation/node.js/24/html-single/guide/index?a=1#top"
+    )
+
+
+def test_urls_outside_the_internal_base_are_untouched() -> None:
+    state = _state(
+        _result(
+            _internal_document("doc-1", "/en/doc"),
+            LcoreEvidence(
+                kind="document",
+                source="okp",
+                document_id="doc-2",
+                title="Other",
+                url="https://elsewhere.example/en/doc",
+                support="retrieved",  # type: ignore[arg-type]
+            ),
+        )
+    )
+
+    rendered = render_answer(
+        KnowledgeAnswer(answer="Answer."),
+        state,
+        requests=2,
+        tokens=10,
+        retriever="rest",
+        source_base_internal=INTERNAL,
+        source_base_public=PUBLIC,
+    )
+
+    entries = cast(list[dict[str, Any]], rendered.metadata["evidence"])
+    assert entries[1]["url"] == "https://elsewhere.example/en/doc"
+    assert "upstream_url" not in entries[1]
+
+
+def test_without_a_public_base_sources_keep_the_upstream_url() -> None:
+    state = _state(_result(_internal_document("doc-1", "/en/doc")))
+
+    rendered = render_answer(
+        KnowledgeAnswer(answer="Answer."),
+        state,
+        requests=2,
+        tokens=10,
+        retriever="rest",
+        source_base_internal=INTERNAL,
+    )
+
+    entries = cast(list[dict[str, Any]], rendered.metadata["evidence"])
+    assert entries[0]["url"] == f"{INTERNAL}/en/doc"
+    assert "upstream_url" not in entries[0]
+
+
+def test_rebase_requires_a_matching_origin_and_internal_path() -> None:
+    bases = SourceBases(internal=f"{INTERNAL}/prefix", public=PUBLIC)
+
+    assert rebase_source_url(f"{INTERNAL}/prefix/en/doc", bases) == f"{PUBLIC}/en/doc"
+    assert rebase_source_url(f"{INTERNAL}/other/doc", bases) == (
+        f"{INTERNAL}/other/doc"
+    )
+    assert rebase_source_url(
+        "http://rhokp.rhokp.svc.cluster.local:9090/prefix/en/doc", bases
+    ) == "http://rhokp.rhokp.svc.cluster.local:9090/prefix/en/doc"

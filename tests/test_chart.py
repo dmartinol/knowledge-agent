@@ -95,26 +95,41 @@ def test_unknown_retriever_fails_the_render() -> None:
     assert "agent.retriever must be 'a2a' or 'rest'" in result.stderr
 
 
-def test_rhokp_url_comes_from_the_secret_by_default() -> None:
+def test_lcore_reads_the_internal_rhokp_url_from_the_values() -> None:
     block = _env_block(_rendered(), "RH_SERVER_OKP")
 
-    assert "secretKeyRef:" in block
-    assert "key: RH_SERVER_OKP" in block
+    assert 'value: "http://rhokp.rhokp.svc.cluster.local:8080"' in block
+    assert "secretKeyRef:" not in block
 
 
-def test_rhokp_url_honours_a_custom_secret_key() -> None:
+def test_internal_rhokp_url_is_overridable() -> None:
     block = _env_block(
-        _rendered("--set", "secrets.keys.rhokpUrl=OKP_URL"), "RH_SERVER_OKP"
-    )
-
-    assert "key: OKP_URL" in block
-
-
-def test_rhokp_public_url_replaces_the_secret_url() -> None:
-    block = _env_block(
-        _rendered("--set", "rhokp.publicUrl=https://rhokp.apps.example.com/"),
+        _rendered("--set", "rhokp.internalUrl=http://rhokp.svc:8080/"),
         "RH_SERVER_OKP",
     )
 
-    assert 'value: "https://rhokp.apps.example.com/"' in block
-    assert "secretKeyRef:" not in block
+    assert 'value: "http://rhokp.svc:8080/"' in block
+
+
+def test_public_rhokp_url_goes_to_the_agent_not_lcore() -> None:
+    output = _rendered(
+        "--set", "rhokp.publicUrl=https://rhokp-rhokp.apps.example.com"
+    )
+
+    assert (
+        'SOURCE_BASE_INTERNAL_URL: "http://rhokp.rhokp.svc.cluster.local:8080"'
+        in output
+    )
+    assert (
+        'SOURCE_BASE_PUBLIC_URL: "https://rhokp-rhokp.apps.example.com"'
+        in output
+    )
+    assert (
+        'value: "https://rhokp-rhokp.apps.example.com"' not in output
+    )
+
+
+def test_without_a_public_url_the_agent_keeps_lcore_urls() -> None:
+    output = _rendered()
+
+    assert "SOURCE_BASE_PUBLIC_URL" not in output
