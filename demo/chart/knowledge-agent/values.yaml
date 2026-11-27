@@ -15,6 +15,9 @@ agent:
     pullPolicy: Always
   port: 8081
   skillsDir: /app/skills
+  # Upstream LCORE retrieval transport: "a2a" (code default) or "rest".
+  # The demo uses "rest" so answers carry referenced_documents as Sources.
+  retriever: rest
   # Set this when the Route host is known so the published Agent Card carries
   # the external URL. When empty, the card advertises http://0.0.0.0:8081.
   publicUrl: ""
@@ -115,6 +118,17 @@ lcore:
       cpu: "2"
       memory: 2Gi
 
+rhokp:
+  # Base URL LCORE uses to reach RHOKP. LCORE also builds the document URLs in
+  # its citations from this value, so point it at whatever LCORE can reach.
+  internalUrl: "http://rhokp.rhokp.svc.cluster.local:8080"
+  # Public base for the same documents, normally RHOKP's Route, e.g.
+  # https://rhokp-rhokp.apps.<cluster-domain>. When set, the agent rewrites
+  # Source URLs that start with internalUrl so callers can open them. Empty
+  # leaves LCORE's URLs untouched. Only the two strings are compared: the agent
+  # never resolves or discovers the Route itself.
+  publicUrl: ""
+
 secrets:
   # Name of an existing Secret. The chart never renders secret material.
   existingSecret: ""
@@ -122,7 +136,6 @@ secrets:
     agentApiKey: AGENT_LLM_API_KEY
     lcoreApiKey: OPENAI_API_KEY
     lcoreBaseUrl: OPENAI_BASE_URL
-    rhokpUrl: RH_SERVER_OKP
 
 networkPolicy:
   enabled: true

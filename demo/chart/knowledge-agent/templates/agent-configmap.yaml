@@ -15,12 +15,20 @@ data:
   AGENT_LLM_TIMEOUT_SECONDS: {{ .Values.agent.llm.timeoutSeconds | quote }}
   AGENT_LLM_REQUEST_LIMIT: {{ .Values.agent.llm.requestLimit | quote }}
   AGENT_LLM_TOTAL_TOKENS_LIMIT: {{ .Values.agent.llm.totalTokensLimit | quote }}
+  LCORE_RETRIEVER: {{ include "knowledge-agent.agent.retriever" . | quote }}
   LCORE_AGENT_CARD_URL: {{ include "knowledge-agent.lcoreCardUrl" . | quote }}
+  LCORE_REST_URL: {{ include "knowledge-agent.lcoreRestUrl" . | quote }}
   WORKFLOW_MAX_ROUNDS: {{ .Values.agent.workflow.maxRounds | quote }}
   WORKFLOW_MAX_MATERIAL_CHARS: {{ .Values.agent.workflow.maxMaterialChars | quote }}
   WORKFLOW_UPSTREAM_TIMEOUT_SECONDS: {{ .Values.agent.workflow.upstreamTimeoutSeconds | quote }}
   WORKFLOW_TASK_DEADLINE_SECONDS: {{ .Values.agent.workflow.taskDeadlineSeconds | quote }}
   WORKFLOW_MAX_CONCURRENT_TASKS: {{ .Values.agent.workflow.maxConcurrentTasks | quote }}
+  {{- with .Values.rhokp.internalUrl }}
+  SOURCE_BASE_INTERNAL_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.rhokp.publicUrl }}
+  SOURCE_BASE_PUBLIC_URL: {{ . | quote }}
+  {{- end }}
   {{- with include "knowledge-agent.agent.publicUrl" . }}
   PUBLIC_URL: {{ . | quote }}
   {{- end }}

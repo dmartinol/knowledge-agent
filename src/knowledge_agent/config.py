@@ -14,6 +14,7 @@ from pydantic import (
     Field,
     SecretStr,
     ValidationError,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -41,6 +42,11 @@ class RetrieverKind(StrEnum):
 
 
 RETRIEVER_VALUES: frozenset[str] = frozenset(kind.value for kind in RetrieverKind)
+
+_SOURCE_BASE_ENV_NAMES = {
+    "source_base_internal": "SOURCE_BASE_INTERNAL_URL",
+    "source_base_public": "SOURCE_BASE_PUBLIC_URL",
+}
 
 
 def _normalize_retriever(value: object) -> str:
@@ -157,6 +163,8 @@ class Settings(BaseModel):
     public_url: str = ""
     lcore_agent_card_url: str = DEFAULT_LCORE_AGENT_CARD_URL
     lcore_rest_url: str = DEFAULT_LCORE_REST_URL
+    source_base_internal: str = ""
+    source_base_public: str = ""
     retriever: RetrieverKind = RetrieverKind.A2A
     skills_dir: str = DEFAULT_AGENT_SKILLS_DIR
     workflow: WorkflowLimits = Field(default_factory=WorkflowLimits)
@@ -176,6 +184,24 @@ class Settings(BaseModel):
     @classmethod
     def _validate_lcore_rest_url(cls, value: str) -> str:
         return _require_http_url(value.strip().rstrip("/"), "LCORE_REST_URL")
+
+    @field_validator("source_base_internal", "source_base_public")
+    @classmethod
+    def _validate_source_base(cls, value: str, info: ValidationInfo) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            return ""
+        name = _SOURCE_BASE_ENV_NAMES.get(info.field_name or "", "SOURCE_BASE_URL")
+        return _require_http_url(cleaned.rstrip("/"), name)
+
+    @model_validator(mode="after")
+    def _public_base_needs_an_internal_base(self) -> Self:
+        if self.source_base_public and not self.source_base_internal:
+            raise ValueError(
+                "SOURCE_BASE_PUBLIC_URL requires SOURCE_BASE_INTERNAL_URL: the "
+                "agent can only rewrite URLs from a known base"
+            )
+        return self
 
     @field_validator("retriever", mode="before")
     @classmethod
@@ -293,6 +319,8 @@ class Settings(BaseModel):
                 or DEFAULT_LCORE_AGENT_CARD_URL,
                 lcore_rest_url=source.get("LCORE_REST_URL")
                 or DEFAULT_LCORE_REST_URL,
+                source_base_internal=source.get("SOURCE_BASE_INTERNAL_URL") or "",
+                source_base_public=source.get("SOURCE_BASE_PUBLIC_URL") or "",
                 retriever=retriever,
                 skills_dir=source.get("AGENT_SKILLS_DIR")
                 or DEFAULT_AGENT_SKILLS_DIR,

@@ -24,6 +24,27 @@ before depending on them. Status words are `Verified`, `Decided`, and `Open`.
 - Open: how long the deployed LCORE version will remain text-only over A2A, and
   whether the evidence envelope is versioned.
 - Interim behavior: answers without structured references are labeled unverified.
+- Verified: LCORE builds `doc_url` by joining `okp.rhokp_url` (from
+  `RH_SERVER_OKP`) with `source_path` or `doc_id`; `okp.offline` selects the
+  path, never the host.
+- Verified: the same `rhokp_url` is the MCP transport base (`<base>/mcp`), so
+  LCORE cannot retrieve in-cluster and cite a public base at the same time.
+- Verified against the demo cluster: RHOKP's Route serves the same document
+  paths and canonicalizes `/en/<doc>` to `/documentation/en-us/<doc>/`.
+- Decided: the chart keeps the two concerns apart. `rhokp.internalUrl` is what
+  LCORE uses for retrieval and for the URLs it cites; `rhokp.publicUrl` is given
+  to the agent only.
+- Decided: when both bases are set, the agent rebases Source URLs at render
+  time, preserving path, query, and fragment, and records the LCORE value as
+  `upstream_url` next to the rebased `url`. The answer text cannot carry URLs at
+  all: the answer validator rejects them, so every rendered URL comes from a
+  structured reference.
+- Decided: the rebase compares the two configured strings only. The agent does
+  not resolve hosts, infer Route names, or call the cluster API, and callers
+  cannot override either base.
+- Open (upstream): LCORE should separate the retrieval transport base from the
+  citation base. Until then every consumer of the citation URLs needs its own
+  rebasing, and each such deployment decides what "public" means.
 
 ## 2. Source selection and caller metadata
 

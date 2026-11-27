@@ -1,7 +1,7 @@
 ---
 name: answer-synthesis
 description: Use when writing the final answer from retrieved material and when deciding which gaps remain.
-version: 2
+version: 3
 ---
 
 # Answer Synthesis
@@ -38,4 +38,5 @@ caller to run another search: the agent has already used its search budget.
 
 Do not mention searches, attempts, rounds, follow-ups, broadening, tools, or
 model behavior, and do not expose private reasoning. Return only the structured
-answer and the gaps expected by the agent.
+answer and the gaps expected by the agent. Do not include links or bare URLs in
+the answer: the agent appends a Sources section from the structured references.

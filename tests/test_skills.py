@@ -33,7 +33,7 @@ async def test_loads_repository_skills_in_order() -> None:
         assert skill.version != "unversioned"
         assert skill.digest == hashlib.sha256(_skill_file(skill.name).read_bytes()).hexdigest()
     assert "knowledge-search@2" in bundle.summary
-    assert "answer-synthesis@2" in bundle.summary
+    assert "answer-synthesis@3" in bundle.summary
 
 
 async def test_instructions_combine_invariants_and_skills() -> None:
