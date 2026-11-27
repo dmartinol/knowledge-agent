@@ -46,8 +46,12 @@ agent:
   workflow:
     maxRounds: 2
     maxMaterialChars: 12000
-    upstreamTimeoutSeconds: 90
-    taskDeadlineSeconds: 180
+    # LCORE runs a bounded tool loop (see lcore.inference), but a query that
+    # takes two retrieval passes still needs well over a minute on the demo
+    # model. Keep the upstream timeout above that and both below the Route
+    # timeout, or blocking calls fail just before LCORE answers.
+    upstreamTimeoutSeconds: 150
+    taskDeadlineSeconds: 210
     maxConcurrentTasks: 4
   probes:
     readiness:
@@ -101,12 +105,46 @@ lcore:
     # Environment variables the LCORE container reads for the provider.
     apiKeyEnv: OPENAI_API_KEY
     baseUrlEnv: OPENAI_BASE_URL
+    # LCORE runs its own tool loop and a chatty model can keep asking
+    # file_search for the same question, so one /v1/query outlives the agent's
+    # upstream timeout. These cap model requests and successful tool calls per
+    # query; LCORE answers with whatever it retrieved when a cap is reached.
+    maxInferIters: 5
+    maxToolCalls: 3
   rag:
     sources:
       - okp
     maxChunks: 5
-    searchMode: keyword
+    # LCORE applies one search mode to the shared file_search tool. Semantic is
+    # what this demo's RHOKP index answers, and it is the only mode the BYOK
+    # FAISS store supports.
+    searchMode: semantic
     offline: true
+    # A second, non-Red-Hat corpus served from a static FAISS index. The index
+    # and its embedding model live in a derived LCORE image (demo/lcore-rag), so
+    # nothing is ingested or downloaded at runtime. When enabled, the store is
+    # appended to rag.retrieval.tool.sources next to OKP, so one file_search
+    # covers both and Sources name the store that answered.
+    byok:
+      enabled: false
+      # Must match the name the index was generated with. When enabled it is
+      # also the entry appended to rag.retrieval.tool.sources.
+      ragId: aurora-docs
+      # Reported by the generator next to the database; it must match the ids
+      # baked into demo/lcore-rag/faiss_store.db.
+      vectorDbId: vs_644cd408-0572-49d4-84bc-c61a67a14f10
+      # Local path of the baked sentence-transformers model inside the image.
+      embeddingModel: /app-root/embeddings/all-mpnet-base-v2
+      embeddingDimension: 768
+      # Writable runtime copy; the image keeps the original read-only at
+      # /app-root/lcore-rag/faiss_store.db.
+      dbPath: /tmp/lcore-rag/faiss_store.db
+      image:
+        # Empty pulls <internalRegistry>/<namespace>/<stream>.
+        repository: ""
+        stream: knowledge-agent-lcore-rag
+        tag: latest
+        pullPolicy: Always
   agentCard:
     name: Lightspeed Assistant
     description: Answers questions using Red Hat knowledge sources.

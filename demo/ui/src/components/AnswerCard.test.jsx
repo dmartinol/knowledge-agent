@@ -10,7 +10,12 @@ describe('AnswerCard', () => {
         text={'Routes expose a Service through a hostname.'}
         metadata={{
           evidence: [
-            { title: 'Doc A', url: 'https://example.test/a', support: 'retrieved' },
+            {
+              title: 'Doc A',
+              url: 'https://example.test/a',
+              source: 'okp',
+              support: 'retrieved',
+            },
           ],
           gaps: ['The search limit was reached.'],
           limitation: null,
@@ -31,6 +36,7 @@ describe('AnswerCard', () => {
       'href',
       'https://example.test/a',
     )
+    expect(screen.getByText('okp')).toBeInTheDocument()
     expect(screen.queryByText(/Unverified/)).not.toBeInTheDocument()
     expect(screen.getByText('2/2 searches')).toBeInTheDocument()
     expect(screen.getByText('3 requests')).toBeInTheDocument()

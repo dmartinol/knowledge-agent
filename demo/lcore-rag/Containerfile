@@ -1,0 +1,24 @@
+# LCORE with a second, non-Red-Hat corpus baked in.
+#
+# Build context is this directory: the committed faiss_store.db is the only
+# source file. Regenerate it with ./generate-index.sh after editing the corpus,
+# then copy the new vector id into the chart values.
+#
+# Keep LCORE_BASE_IMAGE equal to lcore.image.repository:tag in the chart.
+ARG LCORE_BASE_IMAGE=quay.io/lightspeed-core/lightspeed-stack:dev-20261126-ab82ea4
+# Pinned index tooling: it carries the same OGX version LCORE queries with, so
+# the SQLite key layout matches, and it ships the default embedding model.
+ARG RAG_CONTENT_IMAGE=quay.io/lightspeed-core/rag-content-cpu:dev-20261102-d45a628
+
+FROM ${RAG_CONTENT_IMAGE} AS model
+
+FROM ${LCORE_BASE_IMAGE}
+
+# SentenceTransformer loads a local directory without consulting the Hub, so
+# the query-time model is byte-identical to the one that built the index and
+# nothing is downloaded at startup.
+COPY --from=model /rag-content/embeddings_model /app-root/embeddings/all-mpnet-base-v2
+
+# Read-only copy of the index. The Deployment copies it to a writable path at
+# startup because the pod runs as an arbitrary UID.
+COPY faiss_store.db /app-root/lcore-rag/faiss_store.db

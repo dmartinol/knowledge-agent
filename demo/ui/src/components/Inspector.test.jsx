@@ -58,6 +58,8 @@ describe('Inspector', () => {
     expect(screen.getByText('retrieved')).toBeInTheDocument()
     expect(screen.getByText('cited')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'OpenShift Routes' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'source' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'okp' })).toBeInTheDocument()
     expect(screen.getByText('doc-1')).toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: /Raw/ }))

@@ -147,6 +147,10 @@
   margin: 0;
 }
 
+.ka-source-store {
+  margin-left: 0.5rem;
+}
+
 .ka-unverified {
   margin-top: 0.9rem;
 }

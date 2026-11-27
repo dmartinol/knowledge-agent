@@ -1,3 +1,7 @@
+{{- $byok := .Values.lcore.rag.byok | default dict }}
+{{- if and $byok.enabled (ne (.Values.lcore.rag.searchMode | default "") "semantic") }}
+{{- fail "lcore.rag.byok.enabled=true requires lcore.rag.searchMode=semantic: LCORE applies one global search mode to file_search, and the FAISS store only supports vector search" }}
+{{- end }}
 {{- if .Values.lcore.enabled }}
 apiVersion: v1
 kind: ConfigMap
@@ -37,6 +41,9 @@ data:
     inference:
       default_provider: openai
       default_model: {{ .Values.lcore.inference.defaultModel | quote }}
+      # Bounds LCORE's own tool loop; see values.yaml.
+      max_infer_iters: {{ .Values.lcore.inference.maxInferIters }}
+      max_tool_calls: {{ .Values.lcore.inference.maxToolCalls }}
       providers:
         - type: openai
           id: openai
@@ -61,12 +68,31 @@ data:
           {{- end }}
     rag:
       retrieval:
+        # One file_search tool covers every store, so the model decides when to
+        # retrieve and both sources land in the same referenced_documents list.
+        # LCORE gives the tool a single search mode; with BYOK enabled the chart
+        # requires semantic because FAISS has no keyword index.
         tool:
           sources:
           {{- range .Values.lcore.rag.sources }}
             - {{ . | quote }}
           {{- end }}
-          max_chunks: 1
+          {{- if $byok.enabled }}
+            - {{ required "lcore.rag.byok.ragId is required when BYOK is enabled" $byok.ragId | quote }}
+          {{- end }}
+          max_chunks: {{ .Values.lcore.rag.maxChunks }}
+      {{- if $byok.enabled }}
+      # A static FAISS store baked into the LCORE image. The id must match the
+      # keys inside the index; the generator reports it next to the database.
+      byok:
+        stores:
+          - rag_id: {{ required "lcore.rag.byok.ragId is required when BYOK is enabled" $byok.ragId | quote }}
+            backend: faiss
+            embedding_model: {{ $byok.embeddingModel | quote }}
+            embedding_dimension: {{ $byok.embeddingDimension }}
+            vector_db_id: {{ required "lcore.rag.byok.vectorDbId is required when BYOK is enabled" $byok.vectorDbId | quote }}
+            db_path: {{ $byok.dbPath | quote }}
+      {{- end }}
       okp:
         rhokp_url: ${env.RH_SERVER_OKP}
         offline: {{ .Values.lcore.rag.offline }}
@@ -87,4 +113,6 @@ data:
             inputModes: ["text/plain"]
             outputModes: ["text/plain"]
         security: []
+{{- else if $byok.enabled }}
+{{- fail "lcore.rag.byok.enabled=true requires lcore.enabled=true: BYOK stores are part of the LCORE configuration this chart renders" }}
 {{- end }}

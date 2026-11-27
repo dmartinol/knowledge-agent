@@ -23,6 +23,11 @@ function SourceList({ sources }) {
           ) : (
             source.label
           )}
+          {source.source && (
+            <Label isCompact color="blue" className="ka-source-store">
+              {source.source}
+            </Label>
+          )}
         </Content>
       ))}
     </Content>

@@ -74,7 +74,25 @@ app.kubernetes.io/component: lcore
 {{- end -}}
 
 {{- define "knowledge-agent.lcore.image" -}}
+{{- $byok := .Values.lcore.rag.byok | default dict -}}
+{{- if $byok.enabled -}}
+{{- $repository := $byok.image.repository -}}
+{{- if not $repository -}}
+{{- $repository = printf "%s/%s/%s" .Values.image.internalRegistry .Release.Namespace $byok.image.stream -}}
+{{- end -}}
+{{- printf "%s:%s" $repository ($byok.image.tag | default "latest" | toString) -}}
+{{- else -}}
 {{- printf "%s:%s" .Values.lcore.image.repository (.Values.lcore.image.tag | toString) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "knowledge-agent.lcore.pullPolicy" -}}
+{{- $byok := .Values.lcore.rag.byok | default dict -}}
+{{- if $byok.enabled -}}
+{{- $byok.image.pullPolicy | default "Always" -}}
+{{- else -}}
+{{- .Values.lcore.image.pullPolicy -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "knowledge-agent.lcoreCardUrl" -}}
