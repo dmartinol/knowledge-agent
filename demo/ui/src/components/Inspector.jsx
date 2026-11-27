@@ -116,6 +116,7 @@ function Evidence({ metadata }) {
       <Thead>
         <Tr>
           <Th>support</Th>
+          <Th>source</Th>
           <Th>title</Th>
           <Th>document</Th>
           <Th>search</Th>
@@ -125,6 +126,9 @@ function Evidence({ metadata }) {
         {evidence.map((entry, index) => (
           <Tr key={`${entry.document_id ?? index}-${index}`}>
             <Td dataLabel="support">{supportLabel(entry.support)}</Td>
+            <Td dataLabel="source">
+              <span className="ka-mono">{entry.source ?? '—'}</span>
+            </Td>
             <Td dataLabel="title">
               {entry.url ? (
                 <a href={entry.url} target="_blank" rel="noreferrer noopener">
