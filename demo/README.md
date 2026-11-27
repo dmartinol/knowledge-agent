@@ -26,6 +26,10 @@ reasoning, clarification, and answer rendering.
 - An RHOKP endpoint reachable from the LCORE pod. The chart assumes RHOKP runs in
   the `rhokp` namespace at `http://rhokp.rhokp.svc.cluster.local:8080`; change
   `RH_SERVER_OKP` and `networkPolicy.rhokpNamespace` if yours differs.
+- Optionally, the RHOKP Route host, so Sources open outside the cluster. LCORE
+  writes `RH_SERVER_OKP` into every document URL, so a Service URL produces
+  links only cluster-internal clients can follow; set `rhokp.publicUrl` to the
+  Route.
 - An LCORE inference endpoint/key. In library mode LCORE uses the same
   OpenAI-compatible provider settings (`OPENAI_BASE_URL`, `OPENAI_API_KEY`).
 
@@ -98,6 +102,20 @@ queries LCORE's `/v1/query` so answers carry `referenced_documents` as Sources,
 and `a2a` uses the LCORE Agent Card with answer text only. The chart derives
 `LCORE_REST_URL` from the in-cluster LCORE Service, or from `lcore.externalUrl`
 when `lcore.enabled=false`, so no second URL value is needed.
+
+`rhokp.publicUrl` overrides the Secret's `RH_SERVER_OKP`. LCORE uses that one
+base for the MCP transport and for the document URLs it returns, so pointing it
+at the RHOKP Route makes Sources clickable from outside the cluster:
+
+```bash
+helm upgrade knowledge-agent demo/chart/knowledge-agent -n "$NS" --reuse-values \
+  --set rhokp.publicUrl=https://$(oc get route rhokp -n rhokp -o jsonpath='{.spec.host}')
+```
+
+RHOKP redirects its `/en/<doc>` paths to `/documentation/<locale>/<doc>/`, so a
+clicked Source may land on a locale-canonical URL. LCORE also reaches RHOKP
+through the router, which needs the host resolvable from the LCORE pod and
+allowed by `networkPolicy.externalEgress` when that value lists CIDRs.
 
 Watch the rollout. LCORE can take 60–120 s before it listens on port 8080.
 
@@ -245,7 +263,8 @@ uses same-origin URLs.
 | `model_config_error` or HTTP 401 | Invalid agent key or model name. |
 | LCORE returns no evidence | Expected until the upstream structured-evidence contract lands; the answer is labelled unverified. |
 | `retriever=rest` but every run reports `evidence_status=none` | Check `oc logs deploy/knowledge-agent-lcore` for RAG tool output; an empty `referenced_documents` list is LCORE configuration, not an agent failure. |
-| Sources show `http://rhokp.<namespace>.svc.cluster.local:8080/...` URLs | LCORE builds document URLs from `RH_SERVER_OKP`, which points at the in-cluster RHOKP Service. Use a public RHOKP base URL if the demo needs clickable Sources. |
+| Sources show `http://rhokp.<namespace>.svc.cluster.local:8080/...` URLs | LCORE builds document URLs from `RH_SERVER_OKP`, which points at the in-cluster RHOKP Service. Set `rhokp.publicUrl` to the RHOKP Route and upgrade. |
+| Retrieval fails after setting `rhokp.publicUrl` | LCORE now calls RHOKP through the router: check that the Route host resolves from the LCORE pod and that `networkPolicy.externalEgress` covers it when CIDRs are listed. `oc exec deploy/knowledge-agent-lcore -- curl -sI https://<route>/mcp` returns 405 when the endpoint is reachable. |
 | Agent Card advertises `0.0.0.0` | Set `agent.publicUrl` (and optionally `agent.route.host`) and upgrade. |
 | Route answers 503 | The pod is not Ready, or the ingress NetworkPolicy selector does not match your router namespace. |
 | Console proxy returns 502 `agent_unreachable` and the UI pod logs `EAI_AGAIN` | The console cannot resolve cluster DNS while egress-isolated. Some clusters re-originate DNS from the node, so port-53 rules never match. Set `networkPolicy.uiAllowAnyEgress=true`; the console keeps working but its egress is no longer scoped to the agent. |
@@ -273,7 +292,9 @@ the chart at it with `lcore.enabled=false` and `lcore.externalUrl`.
 reach only LCORE and the model endpoint; LCORE can reach only RHOKP and the
 model endpoint. Ingress to the agent is allowed from the OpenShift router and
 from the console pods. External egress is controlled by
-`networkPolicy.externalEgress`; set CIDRs there to narrow it.
+`networkPolicy.externalEgress`; set CIDRs there to narrow it. When
+`rhokp.publicUrl` is set, LCORE reaches RHOKP through the ingress router rather
+than the Service, so the router belongs to LCORE's allowed egress.
 
 **Two consumers read the LCORE provider entry.** LCORE's startup model
 discovery reads `inference.providers[].config`, while the OGX `run.yaml` it

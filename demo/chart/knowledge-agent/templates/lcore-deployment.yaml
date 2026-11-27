@@ -54,10 +54,14 @@ spec:
                   name: {{ include "knowledge-agent.secretName" . }}
                   key: {{ .Values.secrets.keys.lcoreBaseUrl }}
             - name: RH_SERVER_OKP
+            {{- if .Values.rhokp.publicUrl }}
+              value: {{ .Values.rhokp.publicUrl | quote }}
+            {{- else }}
               valueFrom:
                 secretKeyRef:
                   name: {{ include "knowledge-agent.secretName" . }}
                   key: {{ .Values.secrets.keys.rhokpUrl }}
+            {{- end }}
           # TCP probes: LCORE and the in-process OGX client need a long start.
           readinessProbe:
             tcpSocket:

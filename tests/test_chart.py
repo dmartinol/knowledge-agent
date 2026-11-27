@@ -42,6 +42,17 @@ def _rendered(*extra: str) -> str:
     return result.stdout
 
 
+def _env_block(output: str, name: str) -> str:
+    """Return a rendered env entry together with its indented children."""
+    lines = output[output.index(f"- name: {name}") :].splitlines()
+    block = [lines[0]]
+    for line in lines[1:]:
+        if not line.startswith(" " * 14):
+            break
+        block.append(line)
+    return "\n".join(block)
+
+
 def test_default_retriever_is_rest_with_the_in_cluster_url() -> None:
     output = _rendered()
 
@@ -82,3 +93,28 @@ def test_unknown_retriever_fails_the_render() -> None:
 
     assert result.returncode != 0
     assert "agent.retriever must be 'a2a' or 'rest'" in result.stderr
+
+
+def test_rhokp_url_comes_from_the_secret_by_default() -> None:
+    block = _env_block(_rendered(), "RH_SERVER_OKP")
+
+    assert "secretKeyRef:" in block
+    assert "key: RH_SERVER_OKP" in block
+
+
+def test_rhokp_url_honours_a_custom_secret_key() -> None:
+    block = _env_block(
+        _rendered("--set", "secrets.keys.rhokpUrl=OKP_URL"), "RH_SERVER_OKP"
+    )
+
+    assert "key: OKP_URL" in block
+
+
+def test_rhokp_public_url_replaces_the_secret_url() -> None:
+    block = _env_block(
+        _rendered("--set", "rhokp.publicUrl=https://rhokp.apps.example.com/"),
+        "RH_SERVER_OKP",
+    )
+
+    assert 'value: "https://rhokp.apps.example.com/"' in block
+    assert "secretKeyRef:" not in block

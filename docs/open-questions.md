@@ -24,6 +24,24 @@ before depending on them. Status words are `Verified`, `Decided`, and `Open`.
 - Open: how long the deployed LCORE version will remain text-only over A2A, and
   whether the evidence envelope is versioned.
 - Interim behavior: answers without structured references are labeled unverified.
+- Verified: LCORE builds `doc_url` by joining `okp.rhokp_url` (from
+  `RH_SERVER_OKP`) with `source_path` or `doc_id`; `okp.offline` selects the
+  path, never the host.
+- Verified: the same `rhokp_url` is the MCP transport base (`<base>/mcp`), so
+  LCORE cannot use an in-cluster endpoint for retrieval and a public base for
+  citations at the same time.
+- Verified against the demo cluster: RHOKP's Route serves the document paths
+  LCORE returns and canonicalizes `/en/<doc>` to `/documentation/en-us/<doc>/`;
+  LCORE reaches it with valid TLS and answers MCP `initialize` over the Route.
+- Decided: the demo sets `rhokp.publicUrl`, which overrides the Secret's
+  `RH_SERVER_OKP`, so retrieval and citations both use the Route. When it is
+  empty the in-cluster Service is used and Sources carry cluster-internal URLs.
+- Decided: the agent does not rewrite Source URLs. Rewriting would make the
+  evidence disagree with what LCORE returned, and Route discovery is deployment
+  knowledge the agent does not have.
+- Open (upstream): LCORE should separate the retrieval transport base from the
+  citation base. Until it does, every deployment either cites cluster-internal
+  URLs or sends retrieval through the public endpoint.
 
 ## 2. Source selection and caller metadata
 

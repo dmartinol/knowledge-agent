@@ -118,6 +118,16 @@ lcore:
       cpu: "2"
       memory: 2Gi
 
+rhokp:
+  # Public base URL of RHOKP, normally its Route, e.g.
+  # https://rhokp-rhokp.apps.<cluster-domain>. LCORE uses this single base both
+  # for the MCP transport and for the document URLs it returns, so setting it
+  # makes Sources openable from outside the cluster. Empty keeps the URL from
+  # the Secret, which points at the in-cluster Service and yields
+  # cluster-internal links. LCORE must be able to resolve the host and reach the
+  # ingress router; a narrowed networkPolicy.externalEgress must include it.
+  publicUrl: ""
+
 secrets:
   # Name of an existing Secret. The chart never renders secret material.
   existingSecret: ""
