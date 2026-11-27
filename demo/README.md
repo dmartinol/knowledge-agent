@@ -15,6 +15,8 @@ reasoning, clarification, and answer rendering.
 | --- | --- |
 | `demo/agent/Containerfile` | Agent image. Build context is the repository root; the `skills/` tree is baked in. |
 | `demo/ui/` | React + Vite + PatternFly console, plus the Express bundle server/proxy. |
+| `demo/rag-corpus/` | Synthetic Aurora Deploy documents: the non-Red-Hat corpus behind the BYOK store. |
+| `demo/lcore-rag/` | Derived LCORE image, the committed FAISS index it bakes, and the index regeneration script. |
 | `demo/chart/knowledge-agent/` | Helm chart for the agent, console, LCORE, Routes, and NetworkPolicies. |
 | `demo/chart/knowledge-agent/values-secret.yaml.example` | Secret template; the chart never renders secret material. |
 
@@ -65,7 +67,22 @@ Run the console build from `demo/ui`:
   | oc start-build knowledge-agent-demo-ui --from-archive=- --follow -n "$NS"
 ```
 
-Both builds create `:latest` images in the namespace's ImageStreams. By default
+The optional BYOK image carries a second corpus and its embedding model. Build
+it only when you want the "bring your own knowledge" path; its build context is
+`demo/lcore-rag`:
+
+```bash
+oc new-build --binary --strategy=docker --name=knowledge-agent-lcore-rag \
+  --dockerfile=Containerfile -n "$NS"
+
+tar --format=ustar -czf - -C demo/lcore-rag . \
+  | oc start-build knowledge-agent-lcore-rag --from-archive=- --follow -n "$NS"
+```
+
+The BYOK context contains a SQLite file, so pack it as plain ustar: the builder
+rejects the pax headers macOS `tar` emits by default.
+
+Both agent builds create `:latest` images in the namespace's ImageStreams. By default
 the chart pulls
 `image-registry.openshift-image-registry.svc:5000/<namespace>/<stream>:latest`,
 because plain Deployments do not resolve short ImageStream names. To use
@@ -102,6 +119,39 @@ queries LCORE's `/v1/query` so answers carry `referenced_documents` as Sources,
 and `a2a` uses the LCORE Agent Card with answer text only. The chart derives
 `LCORE_REST_URL` from the in-cluster LCORE Service, or from `lcore.externalUrl`
 when `lcore.enabled=false`, so no second URL value is needed.
+
+### Add the BYOK corpus
+
+`lcore.rag.byok.enabled=true` switches LCORE to the image built from
+`demo/lcore-rag` and appends the store to `rag.retrieval.tool.sources` next to
+OKP, so one `file_search` covers both sources. The store id must match the
+committed index; see [demo/lcore-rag/README.md](lcore-rag/README.md).
+
+```bash
+helm upgrade knowledge-agent demo/chart/knowledge-agent -n "$NS" --reuse-values \
+  --set lcore.rag.byok.enabled=true \
+  --set lcore.rag.byok.ragId=aurora-docs \
+  --set lcore.rag.byok.vectorDbId=vs_644cd408-0572-49d4-84bc-c61a67a14f10
+```
+
+`--reuse-values` keeps the previous release's values and ignores new chart
+defaults, so pass every `lcore.rag.byok` key you rely on. The store is rendered
+only for the chart-managed LCORE; with `lcore.enabled=false` the release fails
+to render instead of silently dropping it.
+
+LCORE gives that shared tool one search mode, so BYOK requires
+`lcore.rag.searchMode=semantic`: FAISS has no keyword index, and this demo's
+RHOKP answers semantic queries. The chart refuses to render
+`lcore.rag.byok.enabled=true` with `keyword` instead of failing at query time.
+Keep the store out of `rag.retrieval.inline.sources`: inline retrieval runs on
+every request, so a Red Hat question would arrive padded with Aurora documents.
+Retrieval through the tool stays on demand.
+
+LCORE also runs its own tool loop, and the demo model tends to re-query when
+the first pass looks incomplete. `lcore.inference.maxInferIters` and
+`maxToolCalls` cap that loop, and `agent.workflow.upstreamTimeoutSeconds` is set
+above one full capped query; without the caps a blocking call outlives the
+Route timeout.
 
 `rhokp.internalUrl` is the base LCORE uses to reach RHOKP; LCORE also builds the
 document URLs it cites from that value. `rhokp.publicUrl` is handed to the agent
@@ -161,6 +211,26 @@ The console shows the same data in its inspector: decision source, retriever,
 searches against the cap, model requests and tokens, limits hit, evidence
 support, and the raw A2A exchange. On the `rest` transport the artifact also
 carries `evidence` entries and a `Sources` section.
+
+### BYOK provenance
+
+With the corpus installed, ask a question that only the synthetic core can
+answer, for example *"Which pre-flight command does the Aurora Deploy platform
+provide, and what does it check?"*. Expect a completed answer whose artifact
+carries an evidence entry with `source: "aurora-docs"` and a title from
+[demo/rag-corpus](rag-corpus); the console shows it under Sources. In `a2a`
+mode the answer text still comes back, but there is no evidence list.
+
+```bash
+curl -sk "https://$AGENT_HOST/a2a" -H 'Content-Type: application/json' -d '{
+  "jsonrpc": "2.0", "id": "1", "method": "message/send",
+  "params": {
+    "message": {"kind": "message", "role": "user", "messageId": "curl-byok",
+      "parts": [{"kind": "text", "text": "Which pre-flight command does Aurora Deploy provide?"}]},
+    "configuration": {"blocking": true, "acceptedOutputModes": ["text/plain"]}
+  }
+}' | jq '.result.artifacts[-1].metadata.knowledge_agent.evidence'
+```
 
 ### Routing expectations
 
@@ -275,6 +345,13 @@ uses same-origin URLs.
 | Blocking `message/send` through a Route returns the router's 504 page | The call outlived the router timeout. Both Routes carry `haproxy.router.openshift.io/timeout` from `agent.route.timeout` / `ui.route.timeout` (default `240s`). |
 | UI binary build sits in `npm ci` for tens of minutes | The default 500m build limit starves `npm ci`; raise `spec.resources.limits` on the BuildConfig (2 CPU cut it to under four minutes). |
 | Build stays `Pending` and events show `configmaps ... exceeded quota` | Each build injects three `<build>-{ca,global-ca,sys-config}` ConfigMaps that are not garbage collected. Delete the ones from finished builds (`oc get cm -n "$NS" | grep -E 'knowledge-agent-demo(-ui)?-[0-9]+-'`) before rebuilding, or raise the namespace ConfigMap quota. |
+| BYOK answers carry no Sources even for a corpus-only question | The store id in `lcore.rag.byok.vectorDbId` does not match the committed index. Run the chart tests, regenerate the index, and update the value; LCORE loads a mismatched store without any error. |
+| LCORE `/v1/query` returns 500 and the log shows `AnyUrl` / `invalid URL` | A corpus document has no absolute `url:` in its frontmatter, so LCORE cannot build a citation for it. Add the frontmatter, regenerate the index, and update `vectorDbId`. |
+| `helm upgrade` fails with `requires lcore.rag.searchMode=semantic` | The release still carries `searchMode=keyword` from before BYOK. The shared tool has one mode and FAISS only vector-searches, so set `--set lcore.rag.searchMode=semantic`. |
+| BYOK question answers from Red Hat docs only | The model did not call `file_search`, or the source list lost the store. Check `rag.retrieval.tool.sources` in the rendered ConfigMap and that the `rag_id` matches `lcore.rag.byok.ragId`. |
+| Blocking A2A calls end in `LCORE search failed: kind=timeout` | LCORE exceeded `agent.workflow.upstreamTimeoutSeconds`. Lower `lcore.inference.maxInferIters` / `maxToolCalls` so one query fits, or raise the two workflow timeouts and the Route timeout together. |
+| LCORE exits with an embedding-model error after enabling BYOK | The image lacks the baked model at `lcore.rag.byok.embeddingModel`, or the store was pointed at a Hugging Face id instead of a path. Rebuild the BYOK image from `demo/lcore-rag`. |
+| `cp: cannot stat '/app-root/lcore-rag/faiss_store.db'` in the LCORE pod | The Deployment is running the plain LCORE image. Check `lcore.rag.byok.enabled` and that the `knowledge-agent-lcore-rag` build finished before the upgrade. |
 | LCORE answers `failed` / "Internal server error" and logs `ModelHTTPError` from the provider | The provider rejected the LCORE request shape or model. Check the provider directly with the same model id before changing the chart. |
 | LCORE exits with `ModelDiscoveryError` | The provider entry lost its key or endpoint; see the two-consumer note in `templates/lcore-configmap.yaml`. |
 
@@ -291,6 +368,15 @@ Deployment modeled on the upstream end-to-end manifests: config mounted as a
 `subPath` file, an `emptyDir` at `/tmp/data`, library-mode OGX, and TCP probes.
 For production, use the LCORE deployment mechanism of your platform and point
 the chart at it with `lcore.enabled=false` and `lcore.externalUrl`.
+
+**Two retrieval stores, one tool.** The BYOK corpus is a second
+`rag.byok.stores` entry, not a second service. LCORE lists both stores in the
+`file_search` tool, so the model decides when to retrieve and both stores land
+in one `referenced_documents` list; the agent never learns which store answered
+until it reads `referenced_documents[].source`. Callers cannot pick a store:
+the chart's configuration is the only authority, and the agent's request
+carries a bare query. The cost of one shared tool is one shared search mode,
+hence the chart's semantic requirement when BYOK is on.
 
 **Network boundaries.** The console can reach only the agent; the agent can
 reach only LCORE and the model endpoint; LCORE can reach only RHOKP and the

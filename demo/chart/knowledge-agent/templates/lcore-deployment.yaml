@@ -1,3 +1,4 @@
+{{- $byok := .Values.lcore.rag.byok | default dict }}
 {{- if .Values.lcore.enabled }}
 apiVersion: apps/v1
 kind: Deployment
@@ -29,11 +30,18 @@ spec:
       containers:
         - name: lcore
           image: {{ include "knowledge-agent.lcore.image" . }}
-          imagePullPolicy: {{ .Values.lcore.image.pullPolicy }}
+          imagePullPolicy: {{ include "knowledge-agent.lcore.pullPolicy" . }}
           command:
             - /bin/sh
             - -c
+            {{- if $byok.enabled }}
+            # The index ships read-only in the image at a root-owned path; the
+            # container runs as an arbitrary UID, so copy it somewhere writable
+            # before LCORE opens the SQLite database.
+            - mkdir -p /tmp/data {{ dir $byok.dbPath | quote }} && cp /app-root/lcore-rag/faiss_store.db {{ $byok.dbPath | quote }} && exec /app-root/entrypoint.sh
+            {{- else }}
             - mkdir -p /tmp/data && exec /app-root/entrypoint.sh
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.lcore.port }}
