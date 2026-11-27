@@ -7,6 +7,7 @@ import Inspector from './Inspector.jsx'
 const metadata = {
   loop: 'typed_tool',
   decision_source: 'llm',
+  retriever: 'rest',
   searches: 1,
   search_limit: 2,
   evidence_status: 'available',
@@ -50,6 +51,7 @@ describe('Inspector', () => {
 
     expect(screen.getByText('typed_tool')).toBeInTheDocument()
     expect(screen.getByText('llm')).toBeInTheDocument()
+    expect(screen.getByText('rest')).toBeInTheDocument()
     expect(screen.getByText('1 / 2')).toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: /Evidence/ }))

@@ -15,6 +15,9 @@ agent:
     pullPolicy: Always
   port: 8081
   skillsDir: /app/skills
+  # Upstream LCORE retrieval transport: "a2a" (code default) or "rest".
+  # The demo uses "rest" so answers carry referenced_documents as Sources.
+  retriever: rest
   # Set this when the Route host is known so the published Agent Card carries
   # the external URL. When empty, the card advertises http://0.0.0.0:8081.
   publicUrl: ""

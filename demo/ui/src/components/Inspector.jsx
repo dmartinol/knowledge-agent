@@ -37,6 +37,10 @@ function Workflow({ metadata, task }) {
         <DescriptionListDescription>{metadata.decision_source ?? '—'}</DescriptionListDescription>
       </DescriptionListGroup>
       <DescriptionListGroup>
+        <DescriptionListTerm>retriever</DescriptionListTerm>
+        <DescriptionListDescription>{metadata.retriever ?? '—'}</DescriptionListDescription>
+      </DescriptionListGroup>
+      <DescriptionListGroup>
         <DescriptionListTerm>searches</DescriptionListTerm>
         <DescriptionListDescription>
           {metadata.searches ?? '—'} / {metadata.search_limit ?? '—'}

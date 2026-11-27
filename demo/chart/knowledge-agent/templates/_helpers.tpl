@@ -87,6 +87,24 @@ app.kubernetes.io/component: lcore
 {{- end -}}
 {{- end -}}
 
+{{- define "knowledge-agent.lcoreRestUrl" -}}
+{{- if .Values.lcore.enabled -}}
+{{- printf "http://%s:%v" (include "knowledge-agent.lcore.name" .) .Values.lcore.port -}}
+{{- else if .Values.lcore.externalUrl -}}
+{{- trimSuffix "/" .Values.lcore.externalUrl -}}
+{{- else -}}
+{{- fail "lcore.enabled=false requires lcore.externalUrl" -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "knowledge-agent.agent.retriever" -}}
+{{- $value := .Values.agent.retriever | default "a2a" -}}
+{{- if not (has $value (list "a2a" "rest")) -}}
+{{- fail (printf "agent.retriever must be 'a2a' or 'rest', got %q" $value) -}}
+{{- end -}}
+{{- $value -}}
+{{- end -}}
+
 {{- define "knowledge-agent.agent.publicUrl" -}}
 {{- if .Values.agent.publicUrl -}}
 {{- trimSuffix "/" .Values.agent.publicUrl -}}

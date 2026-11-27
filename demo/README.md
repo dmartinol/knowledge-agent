@@ -93,6 +93,12 @@ helm install knowledge-agent demo/chart/knowledge-agent -n "$NS" \
   --set agent.llm.model=your-model
 ```
 
+`agent.retriever` selects the upstream LCORE transport: `rest` (chart default)
+queries LCORE's `/v1/query` so answers carry `referenced_documents` as Sources,
+and `a2a` uses the LCORE Agent Card with answer text only. The chart derives
+`LCORE_REST_URL` from the in-cluster LCORE Service, or from `lcore.externalUrl`
+when `lcore.enabled=false`, so no second URL value is needed.
+
 Watch the rollout. LCORE can take 60–120 s before it listens on port 8080.
 
 ```bash
@@ -129,9 +135,10 @@ curl -sk "https://$UI_HOST/a2a" -H 'Content-Type: application/json' -d "{
 }" | jq '.result | {state: .status.state, meta: .artifacts[-1].metadata.knowledge_agent}'
 ```
 
-The console shows the same data in its inspector: decision source, searches
-against the cap, model requests and tokens, limits hit, evidence support, and
-the raw A2A exchange.
+The console shows the same data in its inspector: decision source, retriever,
+searches against the cap, model requests and tokens, limits hit, evidence
+support, and the raw A2A exchange. On the `rest` transport the artifact also
+carries `evidence` entries and a `Sources` section.
 
 ### Routing expectations
 
@@ -174,7 +181,10 @@ hanging forever.
 ## Upgrade and uninstall
 
 ```bash
-helm upgrade knowledge-agent demo/chart/knowledge-agent -n "$NS" --reuse-values
+# --reuse-values keeps the previous release's agent.retriever, so pass it to
+# switch transports instead of relying on the chart default.
+helm upgrade knowledge-agent demo/chart/knowledge-agent -n "$NS" --reuse-values \
+  --set agent.retriever=rest
 helm uninstall knowledge-agent -n "$NS"
 ```
 
@@ -234,6 +244,8 @@ uses same-origin URLs.
 | `card_unavailable` in a run | LCORE is not ready or the agent→LCORE NetworkPolicy/service name is wrong. |
 | `model_config_error` or HTTP 401 | Invalid agent key or model name. |
 | LCORE returns no evidence | Expected until the upstream structured-evidence contract lands; the answer is labelled unverified. |
+| `retriever=rest` but every run reports `evidence_status=none` | Check `oc logs deploy/knowledge-agent-lcore` for RAG tool output; an empty `referenced_documents` list is LCORE configuration, not an agent failure. |
+| Sources show `http://rhokp.<namespace>.svc.cluster.local:8080/...` URLs | LCORE builds document URLs from `RH_SERVER_OKP`, which points at the in-cluster RHOKP Service. Use a public RHOKP base URL if the demo needs clickable Sources. |
 | Agent Card advertises `0.0.0.0` | Set `agent.publicUrl` (and optionally `agent.route.host`) and upgrade. |
 | Route answers 503 | The pod is not Ready, or the ingress NetworkPolicy selector does not match your router namespace. |
 | Console proxy returns 502 `agent_unreachable` and the UI pod logs `EAI_AGAIN` | The console cannot resolve cluster DNS while egress-isolated. Some clusters re-originate DNS from the node, so port-53 rules never match. Set `networkPolicy.uiAllowAnyEgress=true`; the console keeps working but its egress is no longer scoped to the agent. |

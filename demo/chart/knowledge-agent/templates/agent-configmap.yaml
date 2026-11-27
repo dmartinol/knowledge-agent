@@ -15,7 +15,9 @@ data:
   AGENT_LLM_TIMEOUT_SECONDS: {{ .Values.agent.llm.timeoutSeconds | quote }}
   AGENT_LLM_REQUEST_LIMIT: {{ .Values.agent.llm.requestLimit | quote }}
   AGENT_LLM_TOTAL_TOKENS_LIMIT: {{ .Values.agent.llm.totalTokensLimit | quote }}
+  LCORE_RETRIEVER: {{ include "knowledge-agent.agent.retriever" . | quote }}
   LCORE_AGENT_CARD_URL: {{ include "knowledge-agent.lcoreCardUrl" . | quote }}
+  LCORE_REST_URL: {{ include "knowledge-agent.lcoreRestUrl" . | quote }}
   WORKFLOW_MAX_ROUNDS: {{ .Values.agent.workflow.maxRounds | quote }}
   WORKFLOW_MAX_MATERIAL_CHARS: {{ .Values.agent.workflow.maxMaterialChars | quote }}
   WORKFLOW_UPSTREAM_TIMEOUT_SECONDS: {{ .Values.agent.workflow.upstreamTimeoutSeconds | quote }}
