@@ -5,15 +5,16 @@
 The runtime implements the control-plane design below: a pydantic-ai typed tool
 loop with an agent-owned model provider, a retrieval-only LCORE client, and
 code-owned rendering of Sources, Gaps, and limitations. The `skills/` tree
-supplies the agent instructions and is loaded at startup. Still pending: verified
-citations wait on the upstream structured evidence envelope.
+supplies the agent instructions and is loaded at startup. Verified citations work
+on the REST transport; the A2A structured-evidence envelope is still pending.
 
 ## Selected deployment shape
 
 The Knowledge Search agent is a separate A2A service. It accepts A2A requests
-from calling agents and uses LCORE through LCORE's A2A interface as its
-knowledge service. The agent owns reasoning. LCORE owns retrieval execution and
-the administrator-configured OKP and BYOK sources.
+from calling agents and uses LCORE as its knowledge service over one configured
+transport: LCORE's A2A interface (the code default) or LCORE's REST query
+endpoint (selected for provenance documents). The agent owns reasoning. LCORE
+owns retrieval execution and the administrator-configured OKP and BYOK sources.
 
 ~~~mermaid
 sequenceDiagram
@@ -21,17 +22,17 @@ sequenceDiagram
     participant Search as Knowledge Search service
     participant Agent as pydantic-ai agent
     participant LLM as Agent-owned LLM provider
-    participant LCORE as LCORE A2A service
+    participant LCORE as LCORE (A2A or REST)
     participant Sources as Configured OKP/BYOK sources
 
     Caller->>Search: A2A message/send
     Search->>Agent: Question, clarification state, limits
     Agent->>LLM: Typed tool-loop turn
     LLM-->>Agent: Clarify or search_knowledge(query)
-    Agent->>LCORE: A2A message/send (fresh context)
+    Agent->>LCORE: One retrieval call on the configured transport
     LCORE->>Sources: Retrieve using deployment configuration
     Sources-->>LCORE: Retrieved results
-    LCORE-->>Agent: Answer text and structured references, when available
+    LCORE-->>Agent: Answer text, plus structured references on REST
     Agent->>LLM: Observation plus remaining budget
     LLM-->>Agent: Search again or final structured answer
     Agent-->>Search: Answer, gaps, evidence state
@@ -74,10 +75,13 @@ requests to LCORE.
 
 ## A2A contract
 
-The service exposes A2A JSON-RPC to callers and uses the LCORE Agent Card and
-JSON-RPC endpoint for upstream knowledge work. It does not send message
-metadata, so callers cannot select a model, provider, vector store, or source
-scope. It does not use LCORE REST query endpoints or import LCORE internals.
+The service exposes A2A JSON-RPC to callers. Upstream knowledge work goes to
+LCORE over the transport named by `LCORE_RETRIEVER`, chosen once at startup:
+`a2a` (default) or `rest`. Requests never carry message metadata, so callers
+cannot select a model, provider, vector store, or source scope. The two
+transports are never merged within a task, and there is no fallback from one to
+the other. LCORE internals are never imported and its databases or model
+providers are never contacted directly.
 
 The agent's A2A response uses task states for progress and clarification and a
 text artifact for the final answer. The Agent Card still advertises text input
@@ -85,6 +89,10 @@ and output and no streaming. The target Agent Card description identifies the
 service as an agent-owned reasoning agent backed by an LCORE knowledge service.
 
 ### LCORE client
+
+The retrieval adapter has two implementations behind one `search()` surface.
+
+**A2A transport (`LCORE_RETRIEVER=a2a`)**
 
 - Discover `LCORE_AGENT_CARD_URL` once, cache the validated card, and require
   protocol `0.3.x` with JSON-RPC.
@@ -102,6 +110,21 @@ service as an agent-owned reasoning agent backed by an LCORE knowledge service.
   host as a bind address: substitute the scheme, host, and port of
   `LCORE_AGENT_CARD_URL` and keep the advertised path. A peer that publishes
   `localhost` would otherwise fail every search as an unreachable endpoint.
+
+**REST transport (`LCORE_RETRIEVER=rest`)**
+
+- Send `POST <LCORE_REST_URL>/v1/query` with exactly `{"query": ...}`. No
+  authorization header, conversation ID, or optional model, provider,
+  vector-store, and source fields. This path is unauthenticated for the POC.
+- Map `referenced_documents` to the evidence contract as
+  `source`, `document_id`, `title`, `url`, and `support=retrieved`. Ignore
+  `rag_chunks`, `tool_calls`, `tool_results`, and token counters.
+- Deduplicate references and report `evidence_status=available` only when at
+  least one traceable document remains; an empty or unusable list reports
+  `none`, which produces the unverified limitation.
+- Apply the same per-call timeout, material truncation, and stable error
+  categories as A2A. Upstream `truncated` is propagated and local truncation is
+  marked. REST returns no task or context IDs.
 
 ## Agent reasoning loop
 

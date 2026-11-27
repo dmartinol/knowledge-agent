@@ -41,6 +41,7 @@ def render_answer(
     *,
     requests: int,
     tokens: int,
+    retriever: str,
 ) -> RenderedAnswer:
     """Render the answer with code-owned Gaps and Sources sections."""
     body = clean_text(answer.answer)
@@ -66,6 +67,7 @@ def render_answer(
     metadata: dict[str, object] = {
         "loop": "typed_tool",
         "decision_source": "llm",
+        "retriever": retriever,
         "searches": state.searches,
         "search_limit": state.max_searches,
         "evidence_status": combined_evidence_status(state),

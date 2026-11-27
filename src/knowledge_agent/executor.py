@@ -43,7 +43,7 @@ LCORE_ERROR_MESSAGES = {
     ),
     LcoreErrorKind.TIMEOUT: "The upstream knowledge service timed out.",
     LcoreErrorKind.HTTP_ERROR: (
-        "The upstream knowledge service returned an HTTP error."
+        "The upstream knowledge service request failed."
     ),
     LcoreErrorKind.JSONRPC_ERROR: (
         "The upstream knowledge service returned an error response."
@@ -220,12 +220,17 @@ class KnowledgeSearchExecutor(AgentExecutor):
             return
 
         rendered = render_answer(
-            decision, state, requests=outcome.requests, tokens=outcome.tokens
+            decision,
+            state,
+            requests=outcome.requests,
+            tokens=outcome.tokens,
+            retriever=self._settings.retriever.value,
         )
         logger.info(
-            "Knowledge search finished: model=%s searches=%d evidence_status=%s "
-            "requests=%d",
+            "Knowledge search finished: model=%s retriever=%s searches=%d "
+            "evidence_status=%s requests=%d",
             self._settings.llm.model,
+            self._settings.retriever.value,
             state.searches,
             rendered.metadata["evidence_status"],
             outcome.requests,

@@ -4,16 +4,17 @@
 
 This document specifies the agent-owned reasoning loop, and the runtime
 implements it. The `skills/` tree supplies the agent instructions and is loaded
-at startup. One part remains open: verified citations depend on the upstream
-structured evidence envelope.
+at startup. Verified citations are available on the REST retrieval transport;
+the A2A structured-evidence envelope remains open.
 
 ## Principles
 
 - The agent owns the control plane. The model decides when to clarify, what to
   search, whether a second search is justified, and when to answer.
-- LCORE is the data plane. One search tool call is one LCORE A2A
-  `message/send`; no LCORE call is made for clarification, follow-up policy,
-  consolidation, or formatting.
+- LCORE is the data plane. One search tool call is one LCORE retrieval on the
+  configured transport (A2A `message/send` or REST `POST /v1/query`); no LCORE
+  call is made for clarification, follow-up policy, consolidation, or
+  formatting.
 - Code owns the hard bounds. The model cannot widen the search count, model
   request count, token budget, deadline, concurrency, or clarification count.
 - Code owns evidence rendering. The model writes the answer and gaps; Sources,
@@ -27,7 +28,7 @@ structured evidence envelope.
 | --- | --- |
 | A2A executor | Validates the caller message, manages task state, enforces the task deadline and concurrency slot, and maps results to A2A states |
 | pydantic-ai agent | Runs the typed tool loop with the agent-owned model provider |
-| `search_knowledge` tool | Performs one fresh LCORE A2A search and returns a bounded observation |
+| `search_knowledge` tool | Performs one bounded LCORE retrieval on the configured transport and returns a bounded observation |
 | `skills/` tree | Holds the agent instructions for search strategy and answer synthesis; loaded and rendered at startup with `pydantic-ai-harness[skills]` |
 | Result renderer | Appends code-owned Sources, Gaps, and limitations and emits artifact metadata |
 
@@ -48,7 +49,7 @@ deliberate simplifications, and each one constrains the next change:
 | Standing orders | Code-owned invariants plus the `knowledge-search` and `answer-synthesis` skills, rendered into instructions once at startup |
 | The decision-maker | The agent-owned model in `reasoning.py`; one `agent.run` per task |
 | What the model can do | One tool, `search_knowledge(query)`. Finishing or clarifying is not a tool: it is the typed output |
-| Running the action | `search_knowledge()` in `loop.py` → LCORE client → one A2A `message/send` |
+| Running the action | `search_knowledge()` in `loop.py` → retrieval adapter → one configured-transport call |
 | What comes back | `SearchObservation`: text, evidence status, references, search index, truncation, and `limit_reached` |
 | Remembering the round | pydantic-ai's in-memory message history for the run, plus `SearchState` for counters, results, and failure |
 | Deciding it is over | `validate_decision()` in `reasoning.py` accepts `KnowledgeAnswer` or `ClarificationRequest` and rejects ordering violations with a retry |

@@ -16,10 +16,11 @@ from starlette.responses import Response
 from starlette.routing import BaseRoute, Route
 
 from knowledge_agent.agent_card import build_agent_card
-from knowledge_agent.config import Settings
+from knowledge_agent.config import RetrieverKind, Settings
 from knowledge_agent.executor import KnowledgeSearchExecutor
 from knowledge_agent.lcore_client import LcoreClient
-from knowledge_agent.loop import SearchClient
+from knowledge_agent.lcore_rest import RestLcoreClient
+from knowledge_agent.loop import ClosableSearchClient, SearchClient
 from knowledge_agent.skills import SkillBundle
 
 RPC_PATH = "/a2a"
@@ -27,6 +28,13 @@ HEALTH_PATH = "/a2a/health"
 CARD_PREFIX = "/.well-known/"
 
 Endpoint = Callable[[Request], Awaitable[Response]]
+
+
+def build_search_client(settings: Settings) -> ClosableSearchClient:
+    """Select the configured LCORE retrieval transport once at startup."""
+    if settings.retriever is RetrieverKind.REST:
+        return RestLcoreClient(settings)
+    return LcoreClient(settings)
 
 
 def _find_endpoint(
@@ -50,10 +58,10 @@ def create_app(
     skills: SkillBundle | None = None,
 ) -> FastAPI:
     card = build_agent_card(settings)
-    owned_client: LcoreClient | None = None
+    owned_client: ClosableSearchClient | None = None
     client: SearchClient
     if search_client is None:
-        owned_client = LcoreClient(settings)
+        owned_client = build_search_client(settings)
         client = owned_client
     else:
         client = search_client

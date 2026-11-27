@@ -504,7 +504,36 @@ async def test_retrieved_evidence_is_rendered_as_sources() -> None:
     }
     assert metadata["loop"] == "typed_tool"
     assert metadata["decision_source"] == "llm"
+    assert metadata["retriever"] == "a2a"
     assert "skills" not in metadata
+
+
+async def test_rest_retriever_is_recorded_in_metadata() -> None:
+    evidence = (
+        LcoreEvidence(
+            kind="document",
+            source="okp",
+            document_id="doc-1",
+            title="Route concepts",
+            support="retrieved",
+        ),
+    )
+    fake = FakeSearchClient([_result(status="available", evidence=evidence)])
+    settings = _settings(
+        LCORE_RETRIEVER="rest", LCORE_REST_URL="http://lcore.test:8080"
+    )
+    model = _model(_tool("routes"), _answer())
+
+    async with _client(settings, fake, model) as client:
+        body = (
+            await client.post(
+                "/a2a", json=_payload("How do OpenShift routes work?")
+            )
+        ).json()
+
+    metadata = _artifact_metadata(body["result"])
+    assert metadata["retriever"] == "rest"
+    assert metadata["evidence_status"] == "available"
 
 
 async def test_cited_only_evidence_is_labeled_unverified() -> None:
